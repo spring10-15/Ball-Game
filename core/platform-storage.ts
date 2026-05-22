@@ -1,0 +1,160 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+import {
+  createInitialPlatformState,
+  normalizePlatformState,
+  snapshotFromPlatformState,
+  type PlatformSnapshot,
+  type PlatformState,
+} from "./platform.js";
+
+type StorageMode = "redis" | "local";
+
+const DEFAULT_STATE_KEY = "agentball:platform-state";
+const LOCK_SUFFIX = ":lock";
+const LOCK_SECONDS = 8;
+const LOCK_RETRIES = 24;
+
+interface RedisConfig {
+  url: string;
+  token: string;
+  key: string;
+}
+
+export async function readPlatformSnapshotFromStore(): Promise<PlatformSnapshot> {
+  const state = await readPlatformStateFromStore();
+  return snapshotFromPlatformState(state);
+}
+
+export async function mutatePlatformState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {
+  const mode = storageMode();
+  if (mode === "redis") return mutateRedisState(mutator);
+  const state = readLocalState();
+  const result = await mutator(state);
+  writeLocalState(state);
+  return result;
+}
+
+export async function readPlatformStateFromStore(): Promise<PlatformState> {
+  const mode = storageMode();
+  if (mode === "redis") {
+    const config = redisConfig();
+    const raw = await redisCommand<string | null>(config, ["GET", config.key]);
+    if (!raw) return createInitialPlatformState();
+    return parseState(raw);
+  }
+  return readLocalState();
+}
+
+async function mutateRedisState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {
+  const config = redisConfig();
+  const lockToken = await acquireRedisLock(config);
+  try {
+    const raw = await redisCommand<string | null>(config, ["GET", config.key]);
+    const state = raw ? parseState(raw) : createInitialPlatformState();
+    const result = await mutator(state);
+    await redisCommand(config, ["SET", config.key, JSON.stringify(normalizePlatformState(state))]);
+    return result;
+  } finally {
+    await releaseRedisLock(config, lockToken);
+  }
+}
+
+async function acquireRedisLock(config: RedisConfig): Promise<string> {
+  const token = randomUUID();
+  const lockKey = `${config.key}${LOCK_SUFFIX}`;
+  for (let attempt = 0; attempt < LOCK_RETRIES; attempt += 1) {
+    const result = await redisCommand<string | null>(config, ["SET", lockKey, token, "NX", "EX", String(LOCK_SECONDS)]);
+    if (result === "OK") return token;
+    await delay(60 + attempt * 20);
+  }
+  throw new Error("系统繁忙：平台状态正在写入，请稍后重试");
+}
+
+async function releaseRedisLock(config: RedisConfig, token: string): Promise<void> {
+  const lockKey = `${config.key}${LOCK_SUFFIX}`;
+  const script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+  try {
+    await redisCommand(config, ["EVAL", script, "1", lockKey, token]);
+  } catch {
+    // 锁有过期时间；释放失败时不影响下一次请求，只会短暂延迟并发写入。
+  }
+}
+
+async function redisCommand<T>(config: RedisConfig, command: string[]): Promise<T> {
+  const response = await fetch(config.url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(command),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { result?: T; error?: string };
+  if (!response.ok || payload.error) {
+    throw new Error(`Redis 存储请求失败：${payload.error ?? response.statusText}`);
+  }
+  return payload.result as T;
+}
+
+function storageMode(): StorageMode {
+  if (hasRedisConfig()) return "redis";
+  if (process.env.VERCEL === "1" || process.env.AGENTBALL_STORAGE_MODE === "redis") {
+    throw new Error("生产环境未配置持久化存储：请设置 KV_REST_API_URL/KV_REST_API_TOKEN 或 UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN");
+  }
+  return "local";
+}
+
+function redisConfig(): RedisConfig {
+  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) {
+    throw new Error("缺少 Redis/KV 环境变量");
+  }
+  return {
+    url,
+    token,
+    key: process.env.AGENTBALL_REDIS_KEY ?? DEFAULT_STATE_KEY,
+  };
+}
+
+function hasRedisConfig(): boolean {
+  return Boolean(
+    (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
+      (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
+  );
+}
+
+function readLocalState(): PlatformState {
+  try {
+    return parseState(readFileSync(localStateFile(), "utf8"));
+  } catch {
+    const state = createInitialPlatformState();
+    writeLocalState(state);
+    return state;
+  }
+}
+
+function writeLocalState(state: PlatformState): void {
+  const file = localStateFile();
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(normalizePlatformState(state), null, 2));
+}
+
+function parseState(raw: string): PlatformState {
+  const parsed = JSON.parse(raw) as PlatformState;
+  if (parsed.schemaVersion !== 1) throw new Error("平台状态版本不受支持");
+  return normalizePlatformState(parsed);
+}
+
+function localStateFile(): string {
+  return path.join(process.cwd(), "data", "platform-state.json");
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
