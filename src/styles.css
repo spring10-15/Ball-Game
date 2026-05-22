@@ -90,6 +90,16 @@ button {
   font-weight: 700;
 }
 
+.build-badge {
+  border: 1px solid #d8e0ea;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #64748b;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 h1,
 h2,
 p {

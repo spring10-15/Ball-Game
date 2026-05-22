@@ -66,6 +66,7 @@ type ProfileTabKey = "balls" | "create" | "appearance" | "rules" | "edits";
 type PlatformTabKey = "balls" | "create" | "appearance" | "rules";
 
 const playbackSpeeds = [1, 2, 4, 8, 16];
+const appBuildLabel = "UAT-20260522-replay-fallback-v2";
 const eventFilters: Array<Event["type"] | "all"> = ["all", "kill", "death", "burst", "danger-enter", "decision-error"];
 const viewItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "home", label: "首页", icon: <Activity size={17} /> },
@@ -342,6 +343,7 @@ export function App() {
               <Activity size={18} />
             </span>
             <span className="brand-name">球球智能体</span>
+            <span className="build-badge">{appBuildLabel}</span>
           </div>
           <h1>球球资产控制台</h1>
         </div>
