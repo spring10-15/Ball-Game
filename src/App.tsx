@@ -66,7 +66,7 @@ type ProfileTabKey = "balls" | "create" | "appearance" | "rules" | "edits";
 type PlatformTabKey = "balls" | "create" | "appearance" | "rules";
 
 const playbackSpeeds = [1, 2, 4, 8, 16];
-const appBuildLabel = "UAT-20260522-replay-fallback-v2";
+const appBuildLabel = "UAT-20260522-json-safe-v3";
 const eventFilters: Array<Event["type"] | "all"> = ["all", "kill", "death", "burst", "danger-enter", "decision-error"];
 const viewItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "home", label: "首页", icon: <Activity size={17} /> },
@@ -109,23 +109,32 @@ export function App() {
   const [selectedPlatformBallId, setSelectedPlatformBallId] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([loadReplay(), loadEvalSummary(), loadPlatformSnapshot(), loadCurrentUser()])
-      .then(([loadedReplay, loadedEval, loadedPlatform, loadedUser]) => {
+    Promise.all([loadReplay(), loadEvalSummary(), loadCurrentUser()])
+      .then(([loadedReplay, loadedEval, loadedUser]) => {
         setReplay(loadedReplay);
         setEvalSummary(loadedEval);
-        setPlatform(loadedPlatform);
         setCurrentUser(loadedUser);
-        setSelectedPlatformBallId(
-          loadedUser
-            ? loadedPlatform.balls.find((ball) => ball.ownerId === loadedUser.userId)?.ballId ?? loadedPlatform.balls[0]?.ballId ?? null
-            : loadedPlatform.balls[0]?.ballId ?? null,
-        );
         setLoadError(null);
       })
       .catch((error) => {
         setLoadError(error instanceof Error ? error.message : String(error));
       });
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    loadPlatformSnapshot()
+      .then((loadedPlatform) => {
+        setPlatform(loadedPlatform);
+        setSelectedPlatformBallId(
+          loadedPlatform.balls.find((ball) => ball.ownerId === currentUser.userId)?.ballId ?? loadedPlatform.balls[0]?.ballId ?? null,
+        );
+        setLoadError(null);
+      })
+      .catch((error) => {
+        setLoadError(error instanceof Error ? error.message : String(error));
+      });
+  }, [currentUser]);
 
   useEffect(() => {
     if (!replay || !isPlaying) return;
@@ -166,7 +175,7 @@ export function App() {
   }, [frameIndex, platform, replay, selectedAgentId, selectedPlatformBallId, view]);
 
   if (loadError) {
-    return <StatusScreen title="回放加载失败" detail={loadError} />;
+    return <StatusScreen title="加载失败" detail={loadError} />;
   }
 
   if (!replay) {
@@ -179,6 +188,10 @@ export function App() {
 
   if (!currentUser) {
     return <LoginScreen onLogin={setCurrentUser} />;
+  }
+
+  if (!platform) {
+    return <StatusScreen title="平台加载中" detail="正在读取球球、用户和对战记录" />;
   }
 
   const frame = frameAt(replay, frameIndex);

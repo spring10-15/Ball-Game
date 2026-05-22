@@ -54,17 +54,15 @@ export const agentColors = [
 export async function loadReplay(): Promise<Replay> {
   try {
     const response = await fetch("/last-replay.json");
-    if (isJsonResponse(response)) {
-      return (await response.json()) as Replay;
-    }
+    const replay = await readJsonOrNull<Replay>(response);
+    if (replay) return replay;
   } catch {
     // 线上可能没有静态回放文件，继续使用内置回放兜底。
   }
   try {
     const fallback = await fetch("/api/replay/demo");
-    if (isJsonResponse(fallback)) {
-      return (await fallback.json()) as Replay;
-    }
+    const replay = await readJsonOrNull<Replay>(fallback);
+    if (replay) return replay;
   } catch {
     // API 不可用时，浏览器端直接生成一份默认回放。
   }
@@ -72,13 +70,13 @@ export async function loadReplay(): Promise<Replay> {
 }
 
 export async function loadEvalSummary(): Promise<EvalSummary | null> {
-  const response = await fetch("/eval-summary.json");
-  if (response.status === 404) return null;
-  if (!isJsonResponse(response)) return null;
-  if (!response.ok) {
-    throw new Error(`读取评测失败：${response.status}`);
+  try {
+    const response = await fetch("/eval-summary.json");
+    if (response.status === 404) return null;
+    return await readJsonOrNull<EvalSummary>(response);
+  } catch {
+    return null;
   }
-  return (await response.json()) as EvalSummary;
 }
 
 export async function runLocalSimulation(options: { seed?: number; durationSeconds?: number }): Promise<Replay> {
@@ -228,6 +226,16 @@ export function formatNumber(value: number, fractionDigits = 0): string {
 
 function isJsonResponse(response: Response): boolean {
   return response.ok && (response.headers.get("content-type") ?? "").includes("application/json");
+}
+
+async function readJsonOrNull<T>(response: Response): Promise<T | null> {
+  if (!isJsonResponse(response)) return null;
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
 function createFallbackReplay(): Replay {

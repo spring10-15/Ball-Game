@@ -246,9 +246,16 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  const payload = (await response.json()) as T & { error?: string };
-  if (!response.ok) {
-    throw new Error(payload.error ?? "接口调用失败");
+  const raw = await response.text();
+  let payload: (T & { error?: string }) | null = null;
+  try {
+    payload = raw ? JSON.parse(raw) as T & { error?: string } : null;
+  } catch {
+    throw new Error(`接口返回不是 JSON：${raw.slice(0, 80) || response.statusText}`);
   }
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "接口调用失败");
+  }
+  if (!payload) throw new Error("接口返回为空");
   return payload;
 }
