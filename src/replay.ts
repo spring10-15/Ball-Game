@@ -1,4 +1,8 @@
 import type { Event, Replay, ReplayFrame } from "../core/types";
+import { runMatch } from "../core/simulator";
+import balanced from "../core/starter-balanced";
+import conservative from "../core/starter-conservative";
+import greedy from "../core/starter-greedy";
 
 export interface EvalSummary {
   args: {
@@ -48,15 +52,23 @@ export const agentColors = [
 ];
 
 export async function loadReplay(): Promise<Replay> {
-  const response = await fetch("/last-replay.json");
-  if (isJsonResponse(response)) {
-    return (await response.json()) as Replay;
+  try {
+    const response = await fetch("/last-replay.json");
+    if (isJsonResponse(response)) {
+      return (await response.json()) as Replay;
+    }
+  } catch {
+    // 线上可能没有静态回放文件，继续使用内置回放兜底。
   }
-  const fallback = await fetch("/api/replay/demo");
-  if (!isJsonResponse(fallback)) {
-    throw new Error(`读取回放失败：${fallback.status}`);
+  try {
+    const fallback = await fetch("/api/replay/demo");
+    if (isJsonResponse(fallback)) {
+      return (await fallback.json()) as Replay;
+    }
+  } catch {
+    // API 不可用时，浏览器端直接生成一份默认回放。
   }
-  return (await fallback.json()) as Replay;
+  return createFallbackReplay();
 }
 
 export async function loadEvalSummary(): Promise<EvalSummary | null> {
@@ -216,4 +228,18 @@ export function formatNumber(value: number, fractionDigits = 0): string {
 
 function isJsonResponse(response: Response): boolean {
   return response.ok && (response.headers.get("content-type") ?? "").includes("application/json");
+}
+
+function createFallbackReplay(): Replay {
+  return runMatch({
+    matchId: "demo_42",
+    config: { seed: 42, durationSeconds: 60 },
+    agents: [
+      { agentId: "a_balanced", name: "Balanced", strategy: balanced },
+      { agentId: "a_cons_1", name: "Conservative-1", strategy: conservative },
+      { agentId: "a_cons_2", name: "Conservative-2", strategy: conservative },
+      { agentId: "a_greedy_1", name: "Greedy-1", strategy: greedy },
+      { agentId: "a_greedy_2", name: "Greedy-2", strategy: greedy },
+    ],
+  });
 }

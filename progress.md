@@ -58,6 +58,7 @@ Original prompt: 你参考 agent 坦克大战再设计一下，不要英文，�
 - 已给“编辑样式”增加删除球球能力：前端有确认弹窗和红色危险按钮；后端新增 `DELETE /api/platform/balls`，要求邮箱登录且只能删除自己的球球；删除会同步移除该球球、相关编辑记录，并从历史对局结果中清掉对应参赛记录。
 - 已验证删除流程：临时用户创建 2 个球球后删除 1 个，编辑列表与球球中心列表都减少到 1 个；控制台无错误；临时数据已还原，当前仍为 4 用户、6 球球。
 - 已按批注隐藏“规则编辑”里的长规则包内容：页面只展示当前球球和“复制给智能体”按钮；复制内容仍包含球球专属编号与 `POST /api/agent/ball-edit-upload` 上传指引。已用授权 Playwright 验证页面无可见规则包文本、剪贴板内容完整、控制台无错误；临时数据已还原。
+- 已修复 Vercel 部署后 `/last-replay.json` 缺失导致的“Unexpected token 'T' / The page could not be found”问题：前端现在先读静态回放，再尝试 `/api/replay/demo`，最后会在浏览器端直接生成默认回放，避免首屏被回放文件阻断；同时补了线上 `/api/replay/demo`、`/api/run-sim`、`/api/run-eval`。
 
 ## 待办
 
