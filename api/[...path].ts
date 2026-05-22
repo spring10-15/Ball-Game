@@ -7,6 +7,7 @@ import {
   verifyEmailCode,
   type AuthUser,
 } from "../core/auth.js";
+import { runEvaluation } from "../core/evaluate.js";
 import {
   agentTuneBallInState,
   createUserBallInState,
@@ -18,6 +19,7 @@ import {
   type RunPlatformBattleInput,
 } from "../core/platform.js";
 import { mutatePlatformState, readPlatformSnapshotFromStore } from "../core/platform-storage.js";
+import { runDemoMatch } from "../core/run-sim.js";
 
 interface ApiRequest extends IncomingMessage {
   body?: unknown;
@@ -72,6 +74,34 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (req.method === "GET" && route === "/platform") {
       sendJson(res, 200, await readPlatformSnapshotFromStore());
+      return;
+    }
+
+    if (req.method === "GET" && route === "/replay/demo") {
+      sendJson(res, 200, runDemoMatch({ seed: 42, durationSeconds: 60, matchId: "demo_42" }));
+      return;
+    }
+
+    if (req.method === "POST" && route === "/run-sim") {
+      const body = await readJsonBody(req);
+      sendJson(res, 200, {
+        replay: runDemoMatch({
+          seed: optionalPositiveInt(body.seed, "seed", 99999999) ?? Math.floor(Date.now() % 100000),
+          durationSeconds: optionalPositiveInt(body.durationSeconds, "durationSeconds", 90) ?? 60,
+        }),
+      });
+      return;
+    }
+
+    if (req.method === "POST" && route === "/run-eval") {
+      const body = await readJsonBody(req);
+      sendJson(res, 200, {
+        summary: runEvaluation({
+          matches: optionalPositiveInt(body.matches, "matches", 100) ?? 30,
+          duration: optionalPositiveInt(body.duration, "duration", 90) ?? 60,
+          seedStart: optionalPositiveInt(body.seedStart, "seedStart", 99999999) ?? 1000,
+        }),
+      });
       return;
     }
 

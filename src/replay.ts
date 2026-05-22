@@ -49,15 +49,20 @@ export const agentColors = [
 
 export async function loadReplay(): Promise<Replay> {
   const response = await fetch("/last-replay.json");
-  if (!response.ok) {
-    throw new Error(`读取回放失败：${response.status}`);
+  if (isJsonResponse(response)) {
+    return (await response.json()) as Replay;
   }
-  return (await response.json()) as Replay;
+  const fallback = await fetch("/api/replay/demo");
+  if (!isJsonResponse(fallback)) {
+    throw new Error(`读取回放失败：${fallback.status}`);
+  }
+  return (await fallback.json()) as Replay;
 }
 
 export async function loadEvalSummary(): Promise<EvalSummary | null> {
   const response = await fetch("/eval-summary.json");
   if (response.status === 404) return null;
+  if (!isJsonResponse(response)) return null;
   if (!response.ok) {
     throw new Error(`读取评测失败：${response.status}`);
   }
@@ -207,4 +212,8 @@ export function formatNumber(value: number, fractionDigits = 0): string {
     maximumFractionDigits: fractionDigits,
     minimumFractionDigits: fractionDigits,
   });
+}
+
+function isJsonResponse(response: Response): boolean {
+  return response.ok && (response.headers.get("content-type") ?? "").includes("application/json");
 }

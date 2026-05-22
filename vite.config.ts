@@ -11,6 +11,7 @@ import {
   updateBallAppearance,
 } from "./core/platform.js";
 import { runDemoAndWrite } from "./core/run-sim.js";
+import { runDemoMatch } from "./core/run-sim.js";
 
 export default defineConfig({
   plugins: [
@@ -30,6 +31,11 @@ export default defineConfig({
 
         server.middlewares.use("/api/agent", async (req, res) => {
           req.url = `/api/agent${req.url === "/" ? "" : req.url ?? ""}`;
+          await apiHandler(req as never, res as never);
+        });
+
+        server.middlewares.use("/api/replay", async (req, res) => {
+          req.url = `/api/replay${req.url === "/" ? "" : req.url ?? ""}`;
           await apiHandler(req as never, res as never);
         });
 
