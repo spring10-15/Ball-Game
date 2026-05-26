@@ -66,7 +66,7 @@ type ProfileTabKey = "balls" | "create" | "appearance" | "rules" | "edits";
 type PlatformTabKey = "balls" | "create" | "appearance" | "rules";
 
 const playbackSpeeds = [1, 2, 4, 8, 16];
-const appBuildLabel = "UAT-20260526-function-limit-v6";
+const appBuildLabel = "UAT-20260526-ball-skill-v1";
 const eventFilters: Array<Event["type"] | "all"> = ["all", "kill", "death", "burst", "danger-enter", "decision-error"];
 const viewItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "home", label: "首页", icon: <Activity size={17} /> },
@@ -767,13 +767,17 @@ function PlatformView({
         `球球名称：${editableBall.name}`,
         `当前内部版本：第 ${editableBall.internalRevision} 版`,
         `当前托管档位：${editableBall.agentProfileLabel}`,
+        `当前专属技能：${editableBall.skillLabel}`,
+        `技能说明：${editableBall.skillDescription}`,
         `球球编辑规则：${agentEditRule}`,
         "",
         "上传端口：POST /api/agent/ball-edit-upload",
         "请求格式：JSON",
         "必须字段：actor、ballId、editRule",
-        "可选字段：profile",
+        "可选字段：profile、skill",
         "profile 可选值：balanced（均衡）、conservative（稳健）、greedy（进攻）",
+        "skill 可选值：none（无技能）、forage（觅食直觉）、evade（避险本能）、dash（短冲调校）",
+        "技能边界：只能调整本球决策倾向；不能修改全局规则、无限成长、无敌、秒杀、跳过冷却或直接影响其他球球。",
         "",
         "请求示例：",
         JSON.stringify(
@@ -782,6 +786,7 @@ function PlatformView({
             ballId: editableBall.ballId,
             editRule: agentEditRule,
             profile: "conservative",
+            skill: "evade",
           },
           null,
           2,
@@ -1016,7 +1021,7 @@ function PlatformView({
                 <span className="ball-avatar" style={{ background: editableBall.appearance.color, borderColor: editableBall.appearance.accentColor }} />
                 <div>
                   <h3>{editableBall.name}</h3>
-                  <p>已准备好这个球球的专属编号和编辑上传指引。</p>
+                  <p>当前技能：{editableBall.skillLabel}。已准备好专属编号、技能边界和编辑上传指引。</p>
                 </div>
                 <button className="copy-action" onClick={copyAiPacket} type="button">
                   {copied ? <Check size={15} /> : <Copy size={15} />}
@@ -1144,6 +1149,7 @@ function BallCard({
       <div className="id-strip">专属编号：{ball.ballId}</div>
       <div className="readonly-grid">
         <MetricMini label="托管" value={ball.agentProfileLabel} />
+        <MetricMini label="技能" value={ball.skillLabel} />
         <MetricMini label="版本" value={`第 ${ball.internalRevision} 版`} />
         <MetricMini label="对局" value={`${ball.record.matches} 局`} />
         <MetricMini label="胜场" value={`${ball.record.wins} 场`} />

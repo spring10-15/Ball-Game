@@ -16,6 +16,7 @@ import {
   updateBallAppearanceInState,
   type AgentProfile,
   type BallAppearance,
+  type BallSkill,
   type RunPlatformBattleInput,
 } from "../core/platform.js";
 import { mutatePlatformState, readPlatformSnapshotFromStore } from "../core/platform-storage.js";
@@ -173,6 +174,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const snapshot = await mutatePlatformState((state) => agentTuneBallInState(state, {
         ballId: requiredString(body.ballId, "ballId"),
         profile: optionalProfile(body.profile),
+        skill: optionalSkill(body.skill),
         editRule: optionalString(body.editRule),
         actor: optionalString(body.actor),
       }));
@@ -242,6 +244,12 @@ function optionalProfile(value: unknown): AgentProfile | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (value === "balanced" || value === "conservative" || value === "greedy") return value;
   throw new RequestError("未知的智能体托管档位");
+}
+
+function optionalSkill(value: unknown): BallSkill | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (value === "none" || value === "forage" || value === "evade" || value === "dash") return value;
+  throw new RequestError("未知的球球专属技能");
 }
 
 async function requireAuth(req: ApiRequest): Promise<AuthUser> {

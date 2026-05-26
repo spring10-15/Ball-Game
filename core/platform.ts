@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { AgentEntry, MatchResult, Replay, StrategyFn } from "./types.js";
+import type { AgentEntry, EnemyView, MatchResult, Pos, Replay, SelfView, StrategyFn, WorldView } from "./types.js";
 import { runMatch } from "./simulator.js";
 import balanced from "./starter-balanced.js";
 import conservative from "./starter-conservative.js";
@@ -19,6 +19,7 @@ import greedy from "./starter-greedy.js";
 export type AgentProfile = "balanced" | "conservative" | "greedy";
 export type BallStatus = "draft" | "deployed";
 export type BallPattern = "solid" | "ring" | "spark";
+export type BallSkill = "none" | "forage" | "evade" | "dash";
 export type BallEditActor = "user" | "agent";
 export type BallEditType = "create" | "basic" | "agent-rules";
 
@@ -64,6 +65,7 @@ export interface PlatformBall {
   motto: string;
   appearance: BallAppearance;
   agentProfile: AgentProfile;
+  skill: BallSkill;
   internalRevision: number;
   status: BallStatus;
   createdAt: string;
@@ -139,7 +141,13 @@ export interface BallRecord {
 
 export interface PlatformSnapshot {
   users: PlatformUser[];
-  balls: Array<PlatformBall & { ownerName: string; record: BallRecord; agentProfileLabel: string }>;
+  balls: Array<PlatformBall & {
+    ownerName: string;
+    record: BallRecord;
+    agentProfileLabel: string;
+    skillLabel: string;
+    skillDescription: string;
+  }>;
   matches: PlatformMatchRecord[];
   editRecords: BallEditRecord[];
   leaderboard: Array<{
@@ -190,6 +198,7 @@ export interface RunPlatformBattleInput {
 export interface AgentTuneInput {
   ballId: string;
   profile?: AgentProfile;
+  skill?: BallSkill;
   editRule?: string;
   actor?: string;
 }
@@ -198,6 +207,20 @@ const profileLabels: Record<AgentProfile, string> = {
   balanced: "均衡托管",
   conservative: "稳健托管",
   greedy: "进攻托管",
+};
+
+const skillLabels: Record<BallSkill, string> = {
+  none: "无专属技能",
+  forage: "觅食直觉",
+  evade: "避险本能",
+  dash: "短冲调校",
+};
+
+const skillDescriptions: Record<BallSkill, string> = {
+  none: "不启用额外技能，只按托管档位行动。",
+  forage: "安全时更优先抢中大型营养块，不改变质量收益。",
+  evade: "更早识别大球威胁，必要时用已有冲刺逃离。",
+  dash: "只在明确追击或逃生窗口使用冲刺，不缩短冷却。",
 };
 
 const strategyByProfile: Record<AgentProfile, StrategyFn> = {
@@ -324,6 +347,7 @@ export function createUserBallInState(state: PlatformState, input: CreateUserBal
     motto: cleanText(input.motto, "先活下来，再变大。", 36),
     appearance: normalizeAppearance(input.appearance),
     agentProfile: "balanced",
+    skill: "none",
     internalRevision: 1,
     status: "deployed",
     createdAt: now,
@@ -389,9 +413,12 @@ export function deleteUserBallInState(state: PlatformState, ballId: string): Pla
 export function agentTuneBallInState(state: PlatformState, input: AgentTuneInput): PlatformSnapshot {
   const ball = mustFindBall(state, input.ballId);
   const nextProfile = input.profile ?? inferProfileFromRule(input.editRule);
+  const nextSkill = input.skill ?? inferSkillFromRule(input.editRule) ?? ball.skill ?? "none";
   if (!isAgentProfile(nextProfile)) throw new Error("未知的智能体托管档位");
+  if (!isBallSkill(nextSkill)) throw new Error("未知的球球专属技能");
   const beforeProfile = ball.agentProfile;
   ball.agentProfile = nextProfile;
+  ball.skill = nextSkill;
   ball.internalRevision += 1;
   ball.updatedAt = new Date().toISOString();
   state.editRecords.unshift(makeEditRecord(
@@ -399,7 +426,7 @@ export function agentTuneBallInState(state: PlatformState, input: AgentTuneInput
     ball,
     "agent",
     "agent-rules",
-    `智能体按编辑规则调整内部设定为${profileLabels[nextProfile]}`,
+    `智能体按编辑规则调整为${profileLabels[nextProfile]}，技能为${skillLabels[nextSkill]}`,
     input.editRule,
     beforeProfile,
     nextProfile,
@@ -461,6 +488,7 @@ function makeSeedBall(
   pattern: BallPattern,
   profile: AgentProfile,
   now: string,
+  skill: BallSkill = "none",
 ): PlatformBall {
   return {
     ballId,
@@ -469,6 +497,7 @@ function makeSeedBall(
     motto,
     appearance: { color, accentColor, pattern },
     agentProfile: profile,
+    skill,
     internalRevision: 1,
     status: "deployed",
     createdAt: now,
@@ -502,6 +531,8 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
       ownerName: usersById.get(ball.ownerId)?.displayName ?? "未知用户",
       record: records.get(ball.ballId) ?? emptyRecord(),
       agentProfileLabel: profileLabels[ball.agentProfile],
+      skillLabel: skillLabels[ball.skill ?? "none"],
+      skillDescription: skillDescriptions[ball.skill ?? "none"],
     })),
     matches: state.matches,
     editRecords: state.editRecords,
@@ -512,12 +543,12 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
     },
     sharePort: {
       label: "智能体球球编辑上传端口",
-      method: "提交球球专属编号、编辑规则和可选托管档位",
-      fields: ["actor", "ballId", "editRule", "profile"],
+      method: "提交球球专属编号、编辑规则、可选托管档位和专属技能",
+      fields: ["actor", "ballId", "editRule", "profile", "skill"],
     },
     agentRules: {
       userCanEdit: ["球球名称", "颜色", "花纹"],
-      agentOnly: ["策略档位", "决策逻辑", "物理规则", "计分机制"],
+      agentOnly: ["策略档位", "专属技能", "决策逻辑", "物理规则", "计分机制"],
     },
   };
 }
@@ -631,6 +662,10 @@ function normalizeState(state: PlatformState): PlatformState {
     changed = true;
   }
   for (const ball of state.balls) {
+    if (!isBallSkill(ball.skill)) {
+      ball.skill = "none";
+      changed = true;
+    }
     if (ball.status !== "deployed") {
       ball.status = "deployed";
       ball.deployedAt = ball.deployedAt ?? ball.updatedAt;
@@ -700,7 +735,7 @@ function agentEntryForBall(ball: PlatformBall): AgentEntry {
   return {
     agentId: agentIdForBall(ball.ballId),
     name: ball.name,
-    strategy: strategyByProfile[ball.agentProfile],
+    strategy: strategyForBall(ball),
   };
 }
 
@@ -775,11 +810,118 @@ function isAgentProfile(value: unknown): value is AgentProfile {
   return value === "balanced" || value === "conservative" || value === "greedy";
 }
 
+function isBallSkill(value: unknown): value is BallSkill {
+  return value === "none" || value === "forage" || value === "evade" || value === "dash";
+}
+
 function inferProfileFromRule(ruleText: string | undefined): AgentProfile {
   const text = ruleText ?? "";
   if (/进攻|追击|激进|吞噬|冲刺/.test(text)) return "greedy";
   if (/稳健|保守|逃跑|生存|防守/.test(text)) return "conservative";
   return "balanced";
+}
+
+function inferSkillFromRule(ruleText: string | undefined): BallSkill | undefined {
+  const text = ruleText ?? "";
+  if (/觅食|吃豆|营养|发育|资源/.test(text)) return "forage";
+  if (/避险|闪避|逃生|保命|防守|稳健|生存/.test(text)) return "evade";
+  if (/短冲|冲刺|爆发|追击|突进/.test(text)) return "dash";
+  return undefined;
+}
+
+function strategyForBall(ball: PlatformBall): StrategyFn {
+  const base = strategyByProfile[ball.agentProfile];
+  const skill = ball.skill ?? "none";
+  if (skill === "forage") return withForageSkill(base);
+  if (skill === "evade") return withEvadeSkill(base);
+  if (skill === "dash") return withDashSkill(base);
+  return base;
+}
+
+function withForageSkill(base: StrategyFn): StrategyFn {
+  return (me, world) => {
+    const threat = nearestThreat(me, world);
+    const threatDistance = threat ? distance(me.position, threat.position) : Infinity;
+    const safe = !threat || threatDistance > Math.max(me.radius * 5.5, 180);
+    if (safe) {
+      const food = world.foods
+        .filter((item) => item.mass >= 5)
+        .sort((a, b) => foodScore(me, b.position, b.mass) - foodScore(me, a.position, a.mass))[0];
+      if (food) return { type: "move", target: food.position };
+    }
+    return base(me, world);
+  };
+}
+
+function withEvadeSkill(base: StrategyFn): StrategyFn {
+  return (me, world) => {
+    const threat = nearestThreat(me, world);
+    if (threat) {
+      const threatDistance = distance(me.position, threat.position);
+      const earlyWarningDistance = Math.max(me.radius * 5.5, 150);
+      if (threatDistance < earlyWarningDistance) {
+        const away = unitFrom(threat.position, me.position);
+        if (me.burstCooldown === 0 && me.mass >= 24 && threatDistance < Math.max(me.radius * 3.6, 95)) {
+          return { type: "burst", direction: away };
+        }
+        return {
+          type: "move",
+          target: clampToMap({
+            x: me.position.x + away.dx * 850,
+            y: me.position.y + away.dy * 850,
+          }, world.mapBounds),
+        };
+      }
+    }
+    return base(me, world);
+  };
+}
+
+function withDashSkill(base: StrategyFn): StrategyFn {
+  return (me, world) => {
+    const baseAction = base(me, world);
+    if (baseAction.type === "burst" && me.mass < 30) {
+      return { type: "move", target: clampToMap({ x: me.position.x + baseAction.direction.dx * 500, y: me.position.y + baseAction.direction.dy * 500 }, world.mapBounds) };
+    }
+    if (baseAction.type !== "move" || me.burstCooldown !== 0 || me.mass < 30) return baseAction;
+
+    const chase = world.enemies
+      .filter((enemy) => !enemy.invulnerable && enemy.mass <= me.mass * 0.62)
+      .filter((enemy) => distance(me.position, enemy.position) < Math.max(me.radius * 5, 160))
+      .sort((a, b) => distance(me.position, a.position) - distance(me.position, b.position))[0];
+    if (chase && distance(baseAction.target, chase.position) < Math.max(me.radius * 3, 90)) {
+      return { type: "burst", direction: unitFrom(me.position, chase.position) };
+    }
+    return baseAction;
+  };
+}
+
+function nearestThreat(me: SelfView, world: WorldView): EnemyView | undefined {
+  return world.enemies
+    .filter((enemy) => !enemy.invulnerable && enemy.mass >= me.mass * 1.15)
+    .sort((a, b) => distance(me.position, a.position) - distance(me.position, b.position))[0];
+}
+
+function foodScore(me: SelfView, position: Pos, mass: number): number {
+  return mass * 10 - distance(me.position, position) * 0.045;
+}
+
+function distance(a: Pos, b: Pos): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function unitFrom(from: Pos, to: Pos): { dx: number; dy: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const m = Math.hypot(dx, dy) || 1;
+  return { dx: dx / m, dy: dy / m };
+}
+
+function clampToMap(p: Pos, b: { w: number; h: number }): Pos {
+  return {
+    x: Math.max(50, Math.min(b.w - 50, p.x)),
+    y: Math.max(50, Math.min(b.h - 50, p.y)),
+  };
 }
 
 function normalizeColor(value: string | undefined, fallback: string): string {

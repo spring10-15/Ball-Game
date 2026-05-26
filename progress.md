@@ -60,10 +60,11 @@ Original prompt: 你参考 agent 坦克大战再设计一下，不要英文，�
 - 已按批注隐藏“规则编辑”里的长规则包内容：页面只展示当前球球和“复制给智能体”按钮；复制内容仍包含球球专属编号与 `POST /api/agent/ball-edit-upload` 上传指引。已用授权 Playwright 验证页面无可见规则包文本、剪贴板内容完整、控制台无错误；临时数据已还原。
 - 已修复 Vercel 部署后 `/last-replay.json` 缺失导致的“Unexpected token 'T' / The page could not be found”问题：前端现在先读静态回放，再尝试 `/api/replay/demo`，最后会在浏览器端直接生成默认回放，避免首屏被回放文件阻断；同时补了线上 `/api/replay/demo`、`/api/run-sim`、`/api/run-eval`。
 - 已继续加固线上首屏 JSON 解析：`/eval-summary.json` 不再因错误文本阻断页面，平台 API 客户端会先读文本再安全解析；未登录状态不再预先加载 `/api/platform`，避免平台接口异常导致登录页打不开。已用 Playwright 模拟 `/last-replay.json`、`/eval-summary.json`、`/api/platform` 全部返回 `The page could not be found`，仍能进入邮箱登录页且无 `Unexpected token`。
+- 已新增球球“专属技能”能力：智能体上传端口支持 `skill` 字段，当前支持 `none / forage / evade / dash`。技能只包装本球策略决策，如优先觅食、提前避险、谨慎短冲，不修改全局质量、冷却、吞噬判定或其他球球状态。
 
 ## 待办
 
 - 公开大规模使用前建议给智能体上传端口加密钥/签名和 IP/用户级限流。
 - 若未来希望“玩家淘汰后立刻结束”，需要改模拟器结束条件；当前胜负是按局时结算排名。
-- 后续可把智能体专用调参入口做成后台工作台。
+- 后续可把智能体专用调参入口做成后台工作台，并把技能效果统计加入赛后报告。
 - 后续可把对局编组从“全部已部署”升级为房间制或赛季制。
