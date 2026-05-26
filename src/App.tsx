@@ -179,11 +179,11 @@ export function App() {
   }
 
   if (!replay) {
-    return <StatusScreen title="回放加载中" detail="正在读取最近一局比赛数据" />;
+    return <StatusScreen title="正在进入平台" detail="正在准备登录与比赛数据" />;
   }
 
   if (currentUser === undefined) {
-    return <StatusScreen title="用户状态加载中" detail="正在确认邮箱登录状态" />;
+    return <StatusScreen title="正在进入平台" detail="正在确认邮箱登录状态" />;
   }
 
   if (!currentUser) {
