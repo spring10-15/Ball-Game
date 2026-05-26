@@ -66,7 +66,7 @@ type ProfileTabKey = "balls" | "create" | "appearance" | "rules" | "edits";
 type PlatformTabKey = "balls" | "create" | "appearance" | "rules";
 
 const playbackSpeeds = [1, 2, 4, 8, 16];
-const appBuildLabel = "UAT-20260523-explicit-api-v4";
+const appBuildLabel = "UAT-20260526-redeploy-v5";
 const eventFilters: Array<Event["type"] | "all"> = ["all", "kill", "death", "burst", "danger-enter", "decision-error"];
 const viewItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "home", label: "首页", icon: <Activity size={17} /> },
