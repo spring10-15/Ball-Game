@@ -12,5 +12,5 @@
     "allowImportingTsExtensions": false,
     "noEmit": true
   },
-  "include": ["api/**/*", "core/**/*", "src/**/*", "vite.config.ts", "out/**/*.json"]
+  "include": ["api/**/*", "core/**/*", "server/**/*", "src/**/*", "vite.config.ts", "out/**/*.json"]
 }

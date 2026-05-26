@@ -24,7 +24,7 @@ Original prompt: 你参考 agent 坦克大战再设计一下，不要英文，�
 - 已清理测试产生的默认“我的球球”数据，当前平台状态回到 3 个示例球球。
 - 已重新验证：首页 h2 只包含“球球中心 / 我的球球”，二级页签可切换，无禁用入口泄漏、无横向溢出、无控制台错误。
 - 已补强“复制给智能体”的设置包：包含上传端口 `POST /api/agent/ball-edit-upload`、JSON 请求示例、必填字段、可选 `profile` 档位说明和执行要求。
-- 已拆出平台纯状态操作，新增 Vercel API 路由 `api/[...path].ts`，线上不再依赖 Vite 中间件。
+- 已拆出平台纯状态操作，新增 Vercel API 显式路由；共享处理器放在 `server/api-handler.ts`，确保 Hobby 计划下函数数不超过 12 个。
 - 已新增 `core/platform-storage.ts`：本地开发写 `data/platform-state.json`，Vercel 生产必须配置 Redis/KV；Redis 写入带短锁，降低并发写状态冲突。
 - 已新增 `vercel.json`、`.env.example` 和 `VERCEL_DEPLOYMENT.md`，记录构建、环境变量、开放接口、并发限制和公开上线风险。
 - 已补浏览器本地用户 ID：同名用户不再共享 3 个球球额度；“我的球球”只显示当前浏览器用户的球球。

@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-import apiHandler from "./api/[...path].js";
+import apiHandler from "./server/api-handler.js";
 import { runEvaluation, writeEvaluation } from "./core/evaluate.js";
 import {
   agentTuneBall,

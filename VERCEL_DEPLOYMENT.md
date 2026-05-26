@@ -3,7 +3,7 @@
 这个版本已经把本地开发 API 和线上 API 分开：
 
 - 本地 `npm run dev` 仍然使用 Vite 中间件，状态写入 `data/platform-state.json`，方便调试。
-- Vercel 线上使用 `api/[...path].ts`，状态通过 Redis/KV 持久化，不依赖函数本地文件。
+- Vercel 线上使用 `api/` 下的 12 个显式函数入口，状态通过 Redis/KV 持久化，不依赖函数本地文件。
 - 线上如果没有配置 Redis/KV，会直接返回中文错误，避免用户创建的数据在无状态函数里丢失。
 
 ## 必填环境变量
