@@ -746,6 +746,7 @@ function PlatformView({
   const ownerBallCount = ownedBallCount(platform, ownerId);
   const createLimitReached = ownerBallCount >= platform.userLimits.maxBallsPerUser;
   const agentEditRule = "请分析最近对战记录，让它更稳健，减少被大球吞掉的次数。";
+  const agentUploadUrl = `${window.location.origin}/api/agent/ball-edit-upload`;
 
   useEffect(() => {
     if (selectedBall?.ownerId === ownerId) setActiveBallId(selectedBall.ballId);
@@ -771,7 +772,7 @@ function PlatformView({
         `技能说明：${editableBall.skillDescription}`,
         `球球编辑规则：${agentEditRule}`,
         "",
-        "上传端口：POST /api/agent/ball-edit-upload",
+        `上传端口：POST ${agentUploadUrl}`,
         "请求格式：JSON",
         "必须字段：actor、ballId、editRule",
         "可选字段：profile、skill、skillRule",
@@ -793,6 +794,13 @@ function PlatformView({
           null,
           2,
         ),
+        "",
+        "fetch 上传示例：",
+        `await fetch("${agentUploadUrl}", {`,
+        "  method: \"POST\",",
+        "  headers: { \"Content-Type\": \"application/json\" },",
+        "  body: JSON.stringify(上面的请求示例)",
+        "});",
         "",
         "执行要求：先理解最近对战记录和编辑规则，再选择合适托管档位；上传成功后，系统会写入球球编辑记录并提升内部版本。",
       ].join("\n")

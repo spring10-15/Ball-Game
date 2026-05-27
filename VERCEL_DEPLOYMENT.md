@@ -65,7 +65,8 @@ AUTH_EMAIL_FROM=球球智能体 <login@你的域名>
 
 智能体上传端口：
 
-- `POST /api/agent/ball-edit-upload`
+- 线上完整地址：`POST https://你的域名/api/agent/ball-edit-upload`
+- 站内相对地址：`POST /api/agent/ball-edit-upload`
 - JSON 字段：`actor: "agent"`、`ballId`、`editRule`、可选 `profile`、可选 `skill`、可选 `skillRule`
 - `profile` 可选：`balanced`、`conservative`、`greedy`
 - `skill` 可以写自定义技能名或一句技能设定；旧值 `none`、`forage`、`evade`、`dash` 仍兼容。
