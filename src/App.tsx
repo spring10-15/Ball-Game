@@ -66,7 +66,7 @@ type ProfileTabKey = "balls" | "create" | "appearance" | "rules" | "edits";
 type PlatformTabKey = "balls" | "create" | "appearance" | "rules";
 
 const playbackSpeeds = [1, 2, 4, 8, 16];
-const appBuildLabel = "UAT-20260526-ball-skill-v1";
+const appBuildLabel = "UAT-20260527-free-skill-v1";
 const eventFilters: Array<Event["type"] | "all"> = ["all", "kill", "death", "burst", "danger-enter", "decision-error"];
 const viewItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "home", label: "首页", icon: <Activity size={17} /> },
@@ -774,10 +774,11 @@ function PlatformView({
         "上传端口：POST /api/agent/ball-edit-upload",
         "请求格式：JSON",
         "必须字段：actor、ballId、editRule",
-        "可选字段：profile、skill",
+        "可选字段：profile、skill、skillRule",
         "profile 可选值：balanced（均衡）、conservative（稳健）、greedy（进攻）",
-        "skill 可选值：none（无技能）、forage（觅食直觉）、evade（避险本能）、dash（短冲调校）",
-        "技能边界：只能调整本球决策倾向；不能修改全局规则、无限成长、无敌、秒杀、跳过冷却或直接影响其他球球。",
+        "skill 可以写自定义技能名称或一句技能设定，例如：影子绕行、抢豆雷达、贴边求生。",
+        "skillRule 可以写更完整的触发条件和偏好，系统会自动归类到受限行为模型。",
+        "技能边界：只能调整本球决策倾向；不能修改全局规则、质量收益、吞噬判定、复活、无敌、冷却，也不能直接影响其他球球。",
         "",
         "请求示例：",
         JSON.stringify(
@@ -786,7 +787,8 @@ function PlatformView({
             ballId: editableBall.ballId,
             editRule: agentEditRule,
             profile: "conservative",
-            skill: "evade",
+            skill: "贴边求生",
+            skillRule: "遇到更大的球时优先向空旷区域或地图边缘绕行；安全后再吃附近中型营养块。",
           },
           null,
           2,

@@ -3,7 +3,7 @@ import type { Replay } from "../core/types";
 export type AgentProfile = "balanced" | "conservative" | "greedy";
 export type BallStatus = "draft" | "deployed";
 export type BallPattern = "solid" | "ring" | "spark";
-export type BallSkill = "none" | "forage" | "evade" | "dash";
+export type BallSkillMode = "none" | "forage" | "evade" | "dash";
 export type BallEditActor = "user" | "agent";
 export type BallEditType = "create" | "basic" | "agent-rules";
 
@@ -40,7 +40,9 @@ export interface PlatformBall {
   appearance: BallAppearance;
   agentProfile: AgentProfile;
   agentProfileLabel: string;
-  skill: BallSkill;
+  skill: BallSkillMode;
+  skillName: string;
+  skillRule: string;
   skillLabel: string;
   skillDescription: string;
   internalRevision: number;
@@ -213,7 +215,8 @@ export async function uploadAgentBallEdit(input: {
   ballId: string;
   editRule: string;
   profile?: AgentProfile;
-  skill?: BallSkill;
+  skill?: string;
+  skillRule?: string;
 }): Promise<PlatformSnapshot> {
   return requestJson<PlatformSnapshot>("/api/agent/ball-edit-upload", {
     method: "POST",

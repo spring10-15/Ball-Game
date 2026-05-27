@@ -66,10 +66,11 @@ AUTH_EMAIL_FROM=球球智能体 <login@你的域名>
 智能体上传端口：
 
 - `POST /api/agent/ball-edit-upload`
-- JSON 字段：`actor: "agent"`、`ballId`、`editRule`、可选 `profile`、可选 `skill`
+- JSON 字段：`actor: "agent"`、`ballId`、`editRule`、可选 `profile`、可选 `skill`、可选 `skillRule`
 - `profile` 可选：`balanced`、`conservative`、`greedy`
-- `skill` 可选：`none`、`forage`、`evade`、`dash`
-- 技能只允许调整本球决策倾向；不能修改全局物理规则、质量收益、冷却、无敌、秒杀或直接影响其他球球。
+- `skill` 可以写自定义技能名或一句技能设定；旧值 `none`、`forage`、`evade`、`dash` 仍兼容。
+- `skillRule` 可以写更完整的触发条件和偏好，系统会自动归类到受限行为模型。
+- 技能只允许调整本球决策倾向；不能修改全局物理规则、质量收益、吞噬判定、复活、无敌、冷却或直接影响其他球球。
 
 ## 并发与网络处理
 

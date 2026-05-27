@@ -61,6 +61,7 @@ Original prompt: 你参考 agent 坦克大战再设计一下，不要英文，�
 - 已修复 Vercel 部署后 `/last-replay.json` 缺失导致的“Unexpected token 'T' / The page could not be found”问题：前端现在先读静态回放，再尝试 `/api/replay/demo`，最后会在浏览器端直接生成默认回放，避免首屏被回放文件阻断；同时补了线上 `/api/replay/demo`、`/api/run-sim`、`/api/run-eval`。
 - 已继续加固线上首屏 JSON 解析：`/eval-summary.json` 不再因错误文本阻断页面，平台 API 客户端会先读文本再安全解析；未登录状态不再预先加载 `/api/platform`，避免平台接口异常导致登录页打不开。已用 Playwright 模拟 `/last-replay.json`、`/eval-summary.json`、`/api/platform` 全部返回 `The page could not be found`，仍能进入邮箱登录页且无 `Unexpected token`。
 - 已新增球球“专属技能”能力：智能体上传端口支持 `skill` 字段，当前支持 `none / forage / evade / dash`。技能只包装本球策略决策，如优先觅食、提前避险、谨慎短冲，不修改全局质量、冷却、吞噬判定或其他球球状态。
+- 已把“专属技能”从固定选项泛化为自由设定：`skill` 可写自定义技能名称或一句技能设定，`skillRule` 可写触发条件和偏好；系统自动归类到安全行为模型，旧的 `none / forage / evade / dash` 仍兼容。
 
 ## 待办
 

@@ -19,7 +19,7 @@ import greedy from "./starter-greedy.js";
 export type AgentProfile = "balanced" | "conservative" | "greedy";
 export type BallStatus = "draft" | "deployed";
 export type BallPattern = "solid" | "ring" | "spark";
-export type BallSkill = "none" | "forage" | "evade" | "dash";
+export type BallSkillMode = "none" | "forage" | "evade" | "dash";
 export type BallEditActor = "user" | "agent";
 export type BallEditType = "create" | "basic" | "agent-rules";
 
@@ -65,7 +65,9 @@ export interface PlatformBall {
   motto: string;
   appearance: BallAppearance;
   agentProfile: AgentProfile;
-  skill: BallSkill;
+  skill: BallSkillMode;
+  skillName: string;
+  skillRule: string;
   internalRevision: number;
   status: BallStatus;
   createdAt: string;
@@ -198,7 +200,8 @@ export interface RunPlatformBattleInput {
 export interface AgentTuneInput {
   ballId: string;
   profile?: AgentProfile;
-  skill?: BallSkill;
+  skill?: string;
+  skillRule?: string;
   editRule?: string;
   actor?: string;
 }
@@ -209,14 +212,14 @@ const profileLabels: Record<AgentProfile, string> = {
   greedy: "进攻托管",
 };
 
-const skillLabels: Record<BallSkill, string> = {
+const skillLabels: Record<BallSkillMode, string> = {
   none: "无专属技能",
   forage: "觅食直觉",
   evade: "避险本能",
   dash: "短冲调校",
 };
 
-const skillDescriptions: Record<BallSkill, string> = {
+const skillDescriptions: Record<BallSkillMode, string> = {
   none: "不启用额外技能，只按托管档位行动。",
   forage: "安全时更优先抢中大型营养块，不改变质量收益。",
   evade: "更早识别大球威胁，必要时用已有冲刺逃离。",
@@ -348,6 +351,8 @@ export function createUserBallInState(state: PlatformState, input: CreateUserBal
     appearance: normalizeAppearance(input.appearance),
     agentProfile: "balanced",
     skill: "none",
+    skillName: "无专属技能",
+    skillRule: "不启用额外技能，只按托管档位行动。",
     internalRevision: 1,
     status: "deployed",
     createdAt: now,
@@ -413,12 +418,13 @@ export function deleteUserBallInState(state: PlatformState, ballId: string): Pla
 export function agentTuneBallInState(state: PlatformState, input: AgentTuneInput): PlatformSnapshot {
   const ball = mustFindBall(state, input.ballId);
   const nextProfile = input.profile ?? inferProfileFromRule(input.editRule);
-  const nextSkill = input.skill ?? inferSkillFromRule(input.editRule) ?? ball.skill ?? "none";
+  const nextSkill = normalizeSkillInput(ball, input);
   if (!isAgentProfile(nextProfile)) throw new Error("未知的智能体托管档位");
-  if (!isBallSkill(nextSkill)) throw new Error("未知的球球专属技能");
   const beforeProfile = ball.agentProfile;
   ball.agentProfile = nextProfile;
-  ball.skill = nextSkill;
+  ball.skill = nextSkill.mode;
+  ball.skillName = nextSkill.name;
+  ball.skillRule = nextSkill.rule;
   ball.internalRevision += 1;
   ball.updatedAt = new Date().toISOString();
   state.editRecords.unshift(makeEditRecord(
@@ -426,7 +432,7 @@ export function agentTuneBallInState(state: PlatformState, input: AgentTuneInput
     ball,
     "agent",
     "agent-rules",
-    `智能体按编辑规则调整为${profileLabels[nextProfile]}，技能为${skillLabels[nextSkill]}`,
+    `智能体按编辑规则调整为${profileLabels[nextProfile]}，技能为${nextSkill.name}`,
     input.editRule,
     beforeProfile,
     nextProfile,
@@ -488,7 +494,7 @@ function makeSeedBall(
   pattern: BallPattern,
   profile: AgentProfile,
   now: string,
-  skill: BallSkill = "none",
+  skill: BallSkillMode = "none",
 ): PlatformBall {
   return {
     ballId,
@@ -498,6 +504,8 @@ function makeSeedBall(
     appearance: { color, accentColor, pattern },
     agentProfile: profile,
     skill,
+    skillName: skillLabels[skill],
+    skillRule: skillDescriptions[skill],
     internalRevision: 1,
     status: "deployed",
     createdAt: now,
@@ -531,8 +539,8 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
       ownerName: usersById.get(ball.ownerId)?.displayName ?? "未知用户",
       record: records.get(ball.ballId) ?? emptyRecord(),
       agentProfileLabel: profileLabels[ball.agentProfile],
-      skillLabel: skillLabels[ball.skill ?? "none"],
-      skillDescription: skillDescriptions[ball.skill ?? "none"],
+      skillLabel: ball.skillName || skillLabels[ball.skill ?? "none"],
+      skillDescription: ball.skillRule || skillDescriptions[ball.skill ?? "none"],
     })),
     matches: state.matches,
     editRecords: state.editRecords,
@@ -543,8 +551,8 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
     },
     sharePort: {
       label: "智能体球球编辑上传端口",
-      method: "提交球球专属编号、编辑规则、可选托管档位和专属技能",
-      fields: ["actor", "ballId", "editRule", "profile", "skill"],
+      method: "提交球球专属编号、编辑规则、可选托管档位和自由技能设定",
+      fields: ["actor", "ballId", "editRule", "profile", "skill", "skillRule"],
     },
     agentRules: {
       userCanEdit: ["球球名称", "颜色", "花纹"],
@@ -664,6 +672,14 @@ function normalizeState(state: PlatformState): PlatformState {
   for (const ball of state.balls) {
     if (!isBallSkill(ball.skill)) {
       ball.skill = "none";
+      changed = true;
+    }
+    if (!ball.skillName) {
+      ball.skillName = skillLabels[ball.skill];
+      changed = true;
+    }
+    if (!ball.skillRule) {
+      ball.skillRule = skillDescriptions[ball.skill];
       changed = true;
     }
     if (ball.status !== "deployed") {
@@ -810,7 +826,7 @@ function isAgentProfile(value: unknown): value is AgentProfile {
   return value === "balanced" || value === "conservative" || value === "greedy";
 }
 
-function isBallSkill(value: unknown): value is BallSkill {
+function isBallSkill(value: unknown): value is BallSkillMode {
   return value === "none" || value === "forage" || value === "evade" || value === "dash";
 }
 
@@ -821,12 +837,40 @@ function inferProfileFromRule(ruleText: string | undefined): AgentProfile {
   return "balanced";
 }
 
-function inferSkillFromRule(ruleText: string | undefined): BallSkill | undefined {
+function inferSkillFromRule(ruleText: string | undefined): BallSkillMode | undefined {
   const text = ruleText ?? "";
-  if (/觅食|吃豆|营养|发育|资源/.test(text)) return "forage";
-  if (/避险|闪避|逃生|保命|防守|稳健|生存/.test(text)) return "evade";
+  if (/避险|闪避|逃生|保命|防守|稳健|生存|求生|绕行|空旷|边缘|大球/.test(text)) return "evade";
   if (/短冲|冲刺|爆发|追击|突进/.test(text)) return "dash";
+  if (/觅食|吃豆|营养|发育|资源/.test(text)) return "forage";
   return undefined;
+}
+
+function normalizeSkillInput(ball: PlatformBall, input: AgentTuneInput): { mode: BallSkillMode; name: string; rule: string } {
+  const rawSkill = cleanOptionalText(input.skill, 80);
+  const rawRule = cleanOptionalText(input.skillRule, 180);
+  const combined = [rawSkill, rawRule, input.editRule].filter(Boolean).join(" ");
+  const previousMode = isBallSkill(ball.skill) ? ball.skill : "none";
+
+  if (!rawSkill && !rawRule) {
+    const inferred = inferSkillFromRule(input.editRule);
+    const mode = inferred ?? previousMode;
+    return {
+      mode,
+      name: ball.skillName || skillLabels[mode],
+      rule: ball.skillRule || skillDescriptions[mode],
+    };
+  }
+
+  if (rawSkill === "none") {
+    return { mode: "none", name: skillLabels.none, rule: skillDescriptions.none };
+  }
+
+  const mode = isBallSkill(rawSkill) ? rawSkill : inferSkillFromRule(combined) ?? previousMode;
+  return {
+    mode,
+    name: isBallSkill(rawSkill) ? skillLabels[rawSkill] : cleanText(rawSkill, skillLabels[mode], 18),
+    rule: rawRule ?? (isBallSkill(rawSkill) ? skillDescriptions[rawSkill] : rawSkill ?? skillDescriptions[mode]),
+  };
 }
 
 function strategyForBall(ball: PlatformBall): StrategyFn {
