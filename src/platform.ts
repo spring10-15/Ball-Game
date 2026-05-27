@@ -3,7 +3,7 @@ import type { Replay } from "../core/types";
 export type AgentProfile = "balanced" | "conservative" | "greedy";
 export type BallStatus = "draft" | "deployed";
 export type BallPattern = "solid" | "ring" | "spark";
-export type BallSkillMode = "none" | "forage" | "evade" | "dash";
+export type BallSkillMode = "none" | "forage" | "evade" | "dash" | "hunt" | "edge" | "center" | "shadow";
 export type BallEditActor = "user" | "agent";
 export type BallEditType = "create" | "basic" | "agent-rules";
 

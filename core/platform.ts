@@ -19,7 +19,7 @@ import greedy from "./starter-greedy.js";
 export type AgentProfile = "balanced" | "conservative" | "greedy";
 export type BallStatus = "draft" | "deployed";
 export type BallPattern = "solid" | "ring" | "spark";
-export type BallSkillMode = "none" | "forage" | "evade" | "dash";
+export type BallSkillMode = "none" | "forage" | "evade" | "dash" | "hunt" | "edge" | "center" | "shadow";
 export type BallEditActor = "user" | "agent";
 export type BallEditType = "create" | "basic" | "agent-rules";
 
@@ -217,6 +217,10 @@ const skillLabels: Record<BallSkillMode, string> = {
   forage: "觅食直觉",
   evade: "避险本能",
   dash: "短冲调校",
+  hunt: "猎手机会",
+  edge: "贴边求生",
+  center: "中心控场",
+  shadow: "影子绕行",
 };
 
 const skillDescriptions: Record<BallSkillMode, string> = {
@@ -224,6 +228,10 @@ const skillDescriptions: Record<BallSkillMode, string> = {
   forage: "安全时更优先抢中大型营养块，不改变质量收益。",
   evade: "更早识别大球威胁，必要时用已有冲刺逃离。",
   dash: "只在明确追击或逃生窗口使用冲刺，不缩短冷却。",
+  hunt: "发现明显可吞噬目标时主动追击，避免追无敌或过近大球。",
+  edge: "低质量、低复活或被压迫时优先贴边转移，降低被夹击概率。",
+  center: "安全窗口内向中心高资源区控场，危险出现后交还托管策略。",
+  shadow: "围绕大球安全半径外侧游走，抢附近资源但不硬碰。",
 };
 
 const strategyByProfile: Record<AgentProfile, StrategyFn> = {
@@ -551,12 +559,12 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
     },
     sharePort: {
       label: "智能体球球编辑上传端口",
-      method: "提交球球专属编号、编辑规则、可选托管档位和自由技能设定",
+      method: "提交球球专属编号、编辑规则、可选托管档位、自由技能和触发规则",
       fields: ["actor", "ballId", "editRule", "profile", "skill", "skillRule"],
     },
     agentRules: {
       userCanEdit: ["球球名称", "颜色", "花纹"],
-      agentOnly: ["策略档位", "专属技能", "决策逻辑", "物理规则", "计分机制"],
+      agentOnly: ["策略档位", "专属技能", "触发条件", "风险阈值", "地图偏好", "追击/撤退优先级"],
     },
   };
 }
@@ -827,7 +835,16 @@ function isAgentProfile(value: unknown): value is AgentProfile {
 }
 
 function isBallSkill(value: unknown): value is BallSkillMode {
-  return value === "none" || value === "forage" || value === "evade" || value === "dash";
+  return (
+    value === "none" ||
+    value === "forage" ||
+    value === "evade" ||
+    value === "dash" ||
+    value === "hunt" ||
+    value === "edge" ||
+    value === "center" ||
+    value === "shadow"
+  );
 }
 
 function inferProfileFromRule(ruleText: string | undefined): AgentProfile {
@@ -839,7 +856,11 @@ function inferProfileFromRule(ruleText: string | undefined): AgentProfile {
 
 function inferSkillFromRule(ruleText: string | undefined): BallSkillMode | undefined {
   const text = ruleText ?? "";
-  if (/避险|闪避|逃生|保命|防守|稳健|生存|求生|绕行|空旷|边缘|大球/.test(text)) return "evade";
+  if (/中心|控场|中场|地图中央|资源区|高资源/.test(text)) return "center";
+  if (/猎手|猎杀|收割|击杀|吃人|吞噬|追小球|抓机会/.test(text)) return "hunt";
+  if (/贴边|边线|边缘|墙边|角落|沿边/.test(text)) return "edge";
+  if (/影子|绕行|尾随|侧翼|游走|拉扯/.test(text)) return "shadow";
+  if (/避险|闪避|逃生|保命|防守|稳健|生存|求生|空旷|大球/.test(text)) return "evade";
   if (/短冲|冲刺|爆发|追击|突进/.test(text)) return "dash";
   if (/觅食|吃豆|营养|发育|资源/.test(text)) return "forage";
   return undefined;
@@ -848,7 +869,6 @@ function inferSkillFromRule(ruleText: string | undefined): BallSkillMode | undef
 function normalizeSkillInput(ball: PlatformBall, input: AgentTuneInput): { mode: BallSkillMode; name: string; rule: string } {
   const rawSkill = cleanOptionalText(input.skill, 80);
   const rawRule = cleanOptionalText(input.skillRule, 180);
-  const combined = [rawSkill, rawRule, input.editRule].filter(Boolean).join(" ");
   const previousMode = isBallSkill(ball.skill) ? ball.skill : "none";
 
   if (!rawSkill && !rawRule) {
@@ -865,7 +885,9 @@ function normalizeSkillInput(ball: PlatformBall, input: AgentTuneInput): { mode:
     return { mode: "none", name: skillLabels.none, rule: skillDescriptions.none };
   }
 
-  const mode = isBallSkill(rawSkill) ? rawSkill : inferSkillFromRule(combined) ?? previousMode;
+  const mode = isBallSkill(rawSkill)
+    ? rawSkill
+    : inferSkillFromRule(rawSkill) ?? inferSkillFromRule(rawRule) ?? inferSkillFromRule(input.editRule) ?? previousMode;
   return {
     mode,
     name: isBallSkill(rawSkill) ? skillLabels[rawSkill] : cleanText(rawSkill, skillLabels[mode], 18),
@@ -879,6 +901,10 @@ function strategyForBall(ball: PlatformBall): StrategyFn {
   if (skill === "forage") return withForageSkill(base);
   if (skill === "evade") return withEvadeSkill(base);
   if (skill === "dash") return withDashSkill(base);
+  if (skill === "hunt") return withHuntSkill(base);
+  if (skill === "edge") return withEdgeSkill(base);
+  if (skill === "center") return withCenterSkill(base);
+  if (skill === "shadow") return withShadowSkill(base);
   return base;
 }
 
@@ -940,10 +966,120 @@ function withDashSkill(base: StrategyFn): StrategyFn {
   };
 }
 
+function withHuntSkill(base: StrategyFn): StrategyFn {
+  return (me, world) => {
+    const threat = nearestThreat(me, world);
+    const threatDistance = threat ? distance(me.position, threat.position) : Infinity;
+    const prey = nearestPrey(me, world, 0.72);
+    if (prey && threatDistance > Math.max(me.radius * 4.8, 150)) {
+      const preyDistance = distance(me.position, prey.position);
+      if (me.burstCooldown === 0 && me.mass >= 32 && preyDistance < Math.max(me.radius * 5.8, 220)) {
+        return { type: "burst", direction: unitFrom(me.position, prey.position) };
+      }
+      return { type: "move", target: prey.position };
+    }
+    return base(me, world);
+  };
+}
+
+function withEdgeSkill(base: StrategyFn): StrategyFn {
+  return (me, world) => {
+    const threat = nearestThreat(me, world);
+    const underPressure = !!threat && distance(me.position, threat.position) < Math.max(me.radius * 6.2, 210);
+    const fragile = me.livesRemaining <= 1 || me.mass < 28;
+    if (underPressure || fragile) {
+      const safeEdge = nearestSafeEdgePoint(me, world);
+      if (threat && me.burstCooldown === 0 && me.mass >= 26 && distance(me.position, threat.position) < Math.max(me.radius * 3.8, 110)) {
+        return { type: "burst", direction: unitFrom(threat.position, me.position) };
+      }
+      return { type: "move", target: safeEdge };
+    }
+    return base(me, world);
+  };
+}
+
+function withCenterSkill(base: StrategyFn): StrategyFn {
+  return (me, world) => {
+    const threat = nearestThreat(me, world);
+    const threatDistance = threat ? distance(me.position, threat.position) : Infinity;
+    if (threatDistance < Math.max(me.radius * 5, 170)) return base(me, world);
+
+    const cluster = richestFoodCluster(me, world);
+    const center = { x: world.mapBounds.w / 2, y: world.mapBounds.h / 2 };
+    if (cluster && distance(cluster, center) < world.viewRadius * 0.8) {
+      return { type: "move", target: cluster };
+    }
+    if (distance(me.position, center) > Math.max(me.radius * 8, 260)) {
+      return { type: "move", target: center };
+    }
+    return base(me, world);
+  };
+}
+
+function withShadowSkill(base: StrategyFn): StrategyFn {
+  return (me, world) => {
+    const anchor = nearestThreat(me, world);
+    if (!anchor) return base(me, world);
+
+    const anchorDistance = distance(me.position, anchor.position);
+    const minSafeDistance = Math.max(me.radius * 6.5, anchor.radius * 2.4, 230);
+    if (anchorDistance < minSafeDistance * 0.82) {
+      const away = unitFrom(anchor.position, me.position);
+      return { type: "move", target: clampToMap({ x: me.position.x + away.dx * 760, y: me.position.y + away.dy * 760 }, world.mapBounds) };
+    }
+
+    const nearbyFood = world.foods
+      .filter((food) => distance(food.position, anchor.position) < minSafeDistance * 1.35)
+      .sort((a, b) => foodScore(me, b.position, b.mass) - foodScore(me, a.position, a.mass))[0];
+    if (nearbyFood && anchorDistance > minSafeDistance) return { type: "move", target: nearbyFood.position };
+
+    const tangent = tangentAround(me.position, anchor.position);
+    return { type: "move", target: clampToMap({ x: me.position.x + tangent.dx * 520, y: me.position.y + tangent.dy * 520 }, world.mapBounds) };
+  };
+}
+
 function nearestThreat(me: SelfView, world: WorldView): EnemyView | undefined {
   return world.enemies
     .filter((enemy) => !enemy.invulnerable && enemy.mass >= me.mass * 1.15)
     .sort((a, b) => distance(me.position, a.position) - distance(me.position, b.position))[0];
+}
+
+function nearestPrey(me: SelfView, world: WorldView, maxMassRatio: number): EnemyView | undefined {
+  return world.enemies
+    .filter((enemy) => !enemy.invulnerable && enemy.mass <= me.mass * maxMassRatio)
+    .sort((a, b) => distance(me.position, a.position) - distance(me.position, b.position))[0];
+}
+
+function richestFoodCluster(me: SelfView, world: WorldView): Pos | undefined {
+  const candidates = world.foods
+    .filter((food) => food.mass >= 3)
+    .map((food) => {
+      const nearby = world.foods.filter((other) => distance(food.position, other.position) < 260);
+      const mass = nearby.reduce((sum, other) => sum + other.mass, 0);
+      return { position: food.position, score: mass * 8 - distance(me.position, food.position) * 0.035 };
+    })
+    .sort((a, b) => b.score - a.score);
+  return candidates[0]?.position;
+}
+
+function nearestSafeEdgePoint(me: SelfView, world: WorldView): Pos {
+  const margin = Math.max(me.radius * 3, 140);
+  const candidates: Pos[] = [
+    { x: margin, y: me.position.y },
+    { x: world.mapBounds.w - margin, y: me.position.y },
+    { x: me.position.x, y: margin },
+    { x: me.position.x, y: world.mapBounds.h - margin },
+  ].map((point) => clampToMap(point, world.mapBounds));
+
+  return candidates
+    .map((point) => ({
+      point,
+      nearestThreatDistance: Math.min(...world.enemies
+        .filter((enemy) => !enemy.invulnerable && enemy.mass >= me.mass)
+        .map((enemy) => distance(point, enemy.position)), Infinity),
+      travelDistance: distance(me.position, point),
+    }))
+    .sort((a, b) => (b.nearestThreatDistance - b.travelDistance * 0.25) - (a.nearestThreatDistance - a.travelDistance * 0.25))[0].point;
 }
 
 function foodScore(me: SelfView, position: Pos, mass: number): number {
@@ -959,6 +1095,11 @@ function unitFrom(from: Pos, to: Pos): { dx: number; dy: number } {
   const dy = to.y - from.y;
   const m = Math.hypot(dx, dy) || 1;
   return { dx: dx / m, dy: dy / m };
+}
+
+function tangentAround(from: Pos, around: Pos): { dx: number; dy: number } {
+  const radial = unitFrom(around, from);
+  return { dx: -radial.dy, dy: radial.dx };
 }
 
 function clampToMap(p: Pos, b: { w: number; h: number }): Pos {

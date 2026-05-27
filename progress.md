@@ -62,6 +62,7 @@ Original prompt: 你参考 agent 坦克大战再设计一下，不要英文，�
 - 已继续加固线上首屏 JSON 解析：`/eval-summary.json` 不再因错误文本阻断页面，平台 API 客户端会先读文本再安全解析；未登录状态不再预先加载 `/api/platform`，避免平台接口异常导致登录页打不开。已用 Playwright 模拟 `/last-replay.json`、`/eval-summary.json`、`/api/platform` 全部返回 `The page could not be found`，仍能进入邮箱登录页且无 `Unexpected token`。
 - 已新增球球“专属技能”能力：智能体上传端口支持 `skill` 字段，当前支持 `none / forage / evade / dash`。技能只包装本球策略决策，如优先觅食、提前避险、谨慎短冲，不修改全局质量、冷却、吞噬判定或其他球球状态。
 - 已把“专属技能”从固定选项泛化为自由设定：`skill` 可写自定义技能名称或一句技能设定，`skillRule` 可写触发条件和偏好；系统自动归类到安全行为模型，旧的 `none / forage / evade / dash` 仍兼容。
+- 已按“放宽 agent 发挥空间”扩展技能行为模型：新增 `hunt / edge / center / shadow`，分别对应猎手机会、贴边求生、中心控场、影子绕行；前端复制包改为允许描述触发条件、风险阈值、地图偏好、追击/撤退优先级，但仍禁止改全局物理、质量收益、吞噬判定、复活、无敌、冷却和其他球球状态。
 - 已检查上线后的智能体复制内容风险：复制包中的上传端口从相对路径 `/api/agent/ball-edit-upload` 改为当前网站完整域名，避免外部智能体不知道上传到哪个站点；同时加入 `fetch` 上传示例。
 
 ## 待办
