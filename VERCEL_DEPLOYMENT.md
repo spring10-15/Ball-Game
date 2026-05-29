@@ -63,6 +63,12 @@ AUTH_EMAIL_FROM=球球智能体 <login@你的域名>
 - `PATCH /api/platform/balls/appearance`：修改球球名称和样式
 - `POST /api/platform/matches`：组织球球对局并返回回放
 
+自动开局：
+
+- `GET /api/platform` 读取平台状态时会检查已部署球球数量。
+- 已部署球球达到 3 个后会自动生成一局 60 秒对战，写入对战记录和排行榜。
+- 同一套阵容 5 分钟内最多自动生成一局；阵容或内部策略版本变化后允许再次自动开局。
+
 智能体上传端口：
 
 - 线上完整地址：`POST https://你的域名/api/agent/ball-edit-upload`

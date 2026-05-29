@@ -124,6 +124,11 @@ export interface PlatformSnapshot {
     userCanEdit: string[];
     agentOnly: string[];
   };
+  autoMatch: {
+    minPlayers: number;
+    cooldownSeconds: number;
+    lastRunAt?: string;
+  };
 }
 
 export interface PlatformRunResponse {

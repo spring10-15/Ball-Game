@@ -52,6 +52,11 @@ export interface AuthSessionRecord {
   expiresAt: string;
 }
 
+export interface AutoMatchState {
+  lastRunAt?: string;
+  lastLineupKey?: string;
+}
+
 export interface BallAppearance {
   color: string;
   accentColor: string;
@@ -127,6 +132,7 @@ export interface PlatformState {
   editRecords: BallEditRecord[];
   authCodes?: AuthCodeRecord[];
   authSessions?: AuthSessionRecord[];
+  autoMatch?: AutoMatchState;
 }
 
 export interface BallRecord {
@@ -174,6 +180,11 @@ export interface PlatformSnapshot {
     userCanEdit: string[];
     agentOnly: string[];
   };
+  autoMatch: {
+    minPlayers: number;
+    cooldownSeconds: number;
+    lastRunAt?: string;
+  };
 }
 
 export interface CreateUserBallInput {
@@ -196,6 +207,10 @@ export interface RunPlatformBattleInput {
   durationSeconds?: number;
   ballIds?: string[];
 }
+
+export const AUTO_MATCH_MIN_PLAYERS = 3;
+export const AUTO_MATCH_COOLDOWN_SECONDS = 300;
+const AUTO_MATCH_DURATION_SECONDS = 60;
 
 export interface AgentTuneInput {
   ballId: string;
@@ -270,6 +285,7 @@ export function savePlatformState(state: PlatformState, outDir = defaultOutDir()
 
 export function getPlatformSnapshot(outDir = defaultOutDir()): PlatformSnapshot {
   const state = loadPlatformState(outDir);
+  if (ensureAutoMatchInState(state)) savePlatformState(state, outDir);
   return snapshotFromPlatformState(state);
 }
 
@@ -342,6 +358,28 @@ export function normalizePlatformState(state: PlatformState): PlatformState {
 
 export function snapshotFromPlatformState(state: PlatformState): PlatformSnapshot {
   return snapshotFromState(state);
+}
+
+export function ensureAutoMatchInState(state: PlatformState, now = new Date()): PlatformMatchRecord | null {
+  const selectedBalls = selectAutoMatchBalls(state);
+  if (selectedBalls.length < AUTO_MATCH_MIN_PLAYERS) return null;
+
+  const lineupKey = autoMatchLineupKey(selectedBalls);
+  const lastRunMs = state.autoMatch?.lastRunAt ? Date.parse(state.autoMatch.lastRunAt) : 0;
+  const cooldownElapsed = !lastRunMs || now.getTime() - lastRunMs >= AUTO_MATCH_COOLDOWN_SECONDS * 1000;
+  const lineupChanged = state.autoMatch?.lastLineupKey !== lineupKey;
+  if (!lineupChanged && !cooldownElapsed) return null;
+
+  const result = runPlatformBattleInState(state, {
+    seed: Math.floor(now.getTime() % 100000),
+    durationSeconds: AUTO_MATCH_DURATION_SECONDS,
+    ballIds: selectedBalls.map((ball) => ball.ballId),
+  });
+  state.autoMatch = {
+    lastRunAt: result.match.createdAt,
+    lastLineupKey: lineupKey,
+  };
+  return result.match;
 }
 
 export function createUserBallInState(state: PlatformState, input: CreateUserBallInput): PlatformSnapshot {
@@ -489,6 +527,7 @@ function makeInitialState(): PlatformState {
     ],
     matches: [],
     editRecords: [],
+    autoMatch: {},
   };
 }
 
@@ -565,6 +604,11 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
     agentRules: {
       userCanEdit: ["球球名称", "颜色", "花纹"],
       agentOnly: ["策略档位", "专属技能", "触发条件", "风险阈值", "地图偏好", "追击/撤退优先级"],
+    },
+    autoMatch: {
+      minPlayers: AUTO_MATCH_MIN_PLAYERS,
+      cooldownSeconds: AUTO_MATCH_COOLDOWN_SECONDS,
+      lastRunAt: state.autoMatch?.lastRunAt,
     },
   };
 }
@@ -650,9 +694,33 @@ function selectBattleBalls(state: PlatformState, ballIds: string[] | undefined):
   return requested.filter((ball) => ball.status === "deployed").slice(0, 8);
 }
 
+function selectAutoMatchBalls(state: PlatformState): PlatformBall[] {
+  return state.balls
+    .filter((ball) => ball.status === "deployed")
+    .sort((a, b) => Date.parse(a.deployedAt ?? a.createdAt) - Date.parse(b.deployedAt ?? b.createdAt))
+    .slice(0, 8);
+}
+
+function autoMatchLineupKey(balls: PlatformBall[]): string {
+  return balls
+    .map((ball) => [
+      ball.ballId,
+      ball.internalRevision,
+      ball.agentProfile,
+      ball.skill,
+      ball.skillName,
+      ball.skillRule,
+    ].join(":"))
+    .join("|");
+}
+
 function normalizeState(state: PlatformState): PlatformState {
   let changed = false;
   const now = Date.now();
+  if (!state.autoMatch) {
+    state.autoMatch = {};
+    changed = true;
+  }
   if (!Array.isArray(state.authCodes)) {
     state.authCodes = [];
     changed = true;

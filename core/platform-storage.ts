@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   createInitialPlatformState,
+  ensureAutoMatchInState,
   normalizePlatformState,
   snapshotFromPlatformState,
   type PlatformSnapshot,
@@ -24,8 +25,10 @@ interface RedisConfig {
 }
 
 export async function readPlatformSnapshotFromStore(): Promise<PlatformSnapshot> {
-  const state = await readPlatformStateFromStore();
-  return snapshotFromPlatformState(state);
+  return mutatePlatformState((state) => {
+    ensureAutoMatchInState(state);
+    return snapshotFromPlatformState(state);
+  });
 }
 
 export async function mutatePlatformState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {
