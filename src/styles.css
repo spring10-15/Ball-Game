@@ -1,6 +1,6 @@
 :root {
   color: #0f172a;
-  background: #f1f5f9;
+  background: #eef4fb;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -16,6 +16,8 @@
 body {
   margin: 0;
   min-width: 320px;
+  background:
+    linear-gradient(180deg, #f7fbff 0, #e9f0f8 46%, #f8fafc 100%);
 }
 
 button,
@@ -88,6 +90,7 @@ button {
   color: #334155;
   font-size: 14px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .build-badge {
@@ -98,6 +101,7 @@ button {
   padding: 3px 8px;
   font-size: 10px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 h1,
@@ -369,11 +373,36 @@ h2 {
 
 .home-stage {
   min-width: 0;
-  border: 1px solid #d8e0ea;
+  border: 1px solid #1f2937;
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  background:
+    linear-gradient(135deg, #07111f 0, #172033 48%, #0b1814 100%);
+  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.22);
   padding: 14px;
+}
+
+.home-arena-hero .section-heading h2,
+.home-arena-hero .section-heading span {
+  color: #f8fafc;
+}
+
+.hero-copy {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hero-copy strong {
+  color: #fef3c7;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.hero-copy p {
+  color: #a7f3d0;
+  font-size: 13px;
+  font-weight: 760;
 }
 
 .orbit-board {
@@ -382,15 +411,17 @@ h2 {
   height: clamp(300px, calc(100vh - 360px), 430px);
   min-height: 300px;
   margin-top: 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(125, 211, 252, 0.35);
   border-radius: 8px;
-  background: radial-gradient(circle at 50% 50%, #f8fafc 0, #eef6ff 52%, #f8fafc 100%);
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.16), rgba(249, 115, 22, 0.12)),
+    #050b14;
 }
 
 .orbit-ring {
   position: absolute;
   inset: 52px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed rgba(125, 211, 252, 0.46);
   border-radius: 999px;
 }
 
@@ -404,7 +435,7 @@ h2 {
   height: 36px;
   border: 4px solid #ffffff;
   border-radius: 999px;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 0 0 3px rgba(248, 250, 252, 0.18), 0 18px 34px rgba(0, 0, 0, 0.34);
   animation: orbit-drift 6s ease-in-out infinite alternate;
 }
 
@@ -424,19 +455,19 @@ h2 {
   width: 120px;
   height: 120px;
   transform: translate(-50%, -50%);
-  border: 1px solid #bfdbfe;
+  border: 1px solid rgba(251, 191, 36, 0.7);
   border-radius: 999px;
-  background: #ffffff;
+  background: #0f172a;
 }
 
 .orbit-core strong {
-  color: #0f172a;
-  font-size: 34px;
+  color: #fef3c7;
+  font-size: 28px;
   line-height: 1;
 }
 
 .orbit-core span {
-  color: #64748b;
+  color: #a7f3d0;
   font-size: 12px;
   font-weight: 760;
 }
@@ -445,44 +476,106 @@ h2 {
   padding: 14px;
 }
 
-.home-action-grid {
+.home-flow {
+  position: relative;
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 16px;
+  margin-top: 18px;
 }
 
-.home-action-grid button {
+.home-flow::before {
+  content: "";
+  position: absolute;
+  left: 21px;
+  top: 42px;
+  bottom: 42px;
+  width: 2px;
+  background: linear-gradient(180deg, #f97316, #22d3ee, #22c55e);
+}
+
+.home-flow button {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  border: 1px solid #e2e8f0;
+  gap: 14px;
+  min-height: 76px;
+  border: 1px solid #dbeafe;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #ffffff;
   color: #0f172a;
-  padding: 10px 12px;
+  padding: 12px;
   text-align: left;
 }
 
-.home-action-grid span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 740;
+.home-flow button:first-child {
+  border-color: #fed7aa;
+  background: #fff7ed;
 }
 
-.home-action-grid strong {
+.home-flow button:nth-child(2) {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.home-flow button:nth-child(3) {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.home-flow button > b {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.home-flow span,
+.home-flow strong,
+.home-flow em {
+  min-width: 0;
+}
+
+.home-flow span {
+  display: grid;
+  gap: 5px;
+}
+
+.home-flow strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
   color: #0f172a;
-  font-size: 14px;
-  font-weight: 820;
+  font-size: 16px;
+  font-weight: 880;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.home-flow em {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-command-panel {
+  border-color: #cbd5e1;
+}
+
 .chart-card {
-  grid-column: 2;
-  grid-row: 2;
+  grid-column: 1 / -1;
   align-self: stretch;
 }
 
@@ -518,7 +611,7 @@ h2 {
   display: block;
   height: 14px;
   border-radius: 8px;
-  background: linear-gradient(90deg, #2563eb, #0f766e);
+  background: linear-gradient(90deg, #22d3ee, #f97316, #84cc16);
 }
 
 @keyframes orbit-drift {

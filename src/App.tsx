@@ -14,7 +14,6 @@ import {
   ShieldCheck,
   SkipBack,
   SkipForward,
-  Trash2,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -25,7 +24,6 @@ import { ReplayCanvas } from "./ReplayCanvas";
 import {
   agentIdForBall,
   createPlatformBall,
-  deletePlatformBall,
   loadPlatformSnapshot,
   loadCurrentUser,
   logoutCurrentUser,
@@ -37,7 +35,6 @@ import {
   type AuthUser,
   type PlatformBall,
   type PlatformSnapshot,
-  runPlatformMatch,
   savePlatformAppearance,
   verifyLoginCode,
 } from "./platform";
@@ -62,11 +59,11 @@ import {
 
 type ViewKey = "home" | "arena" | "profile";
 type ArenaTabKey = "matches" | "leaderboard" | "replay";
-type ProfileTabKey = "balls" | "create" | "appearance" | "rules" | "edits";
-type PlatformTabKey = "balls" | "create" | "appearance" | "rules";
+type ProfileTabKey = "balls" | "create" | "appearance" | "agent" | "edits";
+type PlatformTabKey = "balls" | "create" | "appearance" | "agent";
 
 const playbackSpeeds = [1, 2, 4, 8, 16];
-const appBuildLabel = "UAT-20260527-expanded-agent-skill-v1";
+const appBuildLabel = "v20260529";
 const eventFilters: Array<Event["type"] | "all"> = ["all", "kill", "death", "burst", "danger-enter", "decision-error"];
 const viewItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "home", label: "首页", icon: <Activity size={17} /> },
@@ -81,8 +78,8 @@ const arenaTabs: Array<{ key: ArenaTabKey; label: string; icon: React.ReactNode 
 const profileTabs: Array<{ key: ProfileTabKey; label: string; icon: React.ReactNode }> = [
   { key: "balls", label: "球球中心", icon: <Users size={16} /> },
   { key: "create", label: "创建球球", icon: <UserPlus size={16} /> },
-  { key: "appearance", label: "编辑样式", icon: <Palette size={16} /> },
-  { key: "rules", label: "规则编辑", icon: <Copy size={16} /> },
+  { key: "appearance", label: "编辑外观", icon: <Palette size={16} /> },
+  { key: "agent", label: "复制给 Agent", icon: <Copy size={16} /> },
   { key: "edits", label: "编辑记录", icon: <Palette size={16} /> },
 ];
 
@@ -107,6 +104,7 @@ export function App() {
   const [platform, setPlatform] = useState<PlatformSnapshot | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null | undefined>(undefined);
   const [selectedPlatformBallId, setSelectedPlatformBallId] = useState<string | null>(null);
+  const [profileEntryTab, setProfileEntryTab] = useState<ProfileTabKey>("balls");
 
   useEffect(() => {
     Promise.all([loadReplay(), loadEvalSummary(), loadCurrentUser()])
@@ -310,43 +308,6 @@ export function App() {
     }
   }
 
-  async function deleteBallFromUi(ballId: string): Promise<PlatformBall | null> {
-    setOperation("platform");
-    try {
-      const nextPlatform = await deletePlatformBall(ballId);
-      setPlatform(nextPlatform);
-      const nextSelected = nextPlatform.balls.find((ball) => ball.ownerId === currentUser?.userId) ?? null;
-      setSelectedPlatformBallId(nextSelected?.ballId ?? null);
-      return nextSelected;
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
-      return null;
-    } finally {
-      setOperation(null);
-    }
-  }
-
-  async function runPlatformBattleFromUi(ballIds?: string[]) {
-    setOperation("platform-match");
-    try {
-      const result = await runPlatformMatch({
-        seed: Math.floor(Date.now() % 100000),
-        durationSeconds: 60,
-        ballIds,
-      });
-      setPlatform(result.snapshot);
-      setReplay(result.replay);
-      setFrameIndex(0);
-      setSelectedAgentId(result.replay.results[0]?.agentId ?? null);
-      setIsPlaying(true);
-      setView("arena");
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setOperation(null);
-    }
-  }
-
   return (
     <main className="app-shell">
       <section className="topbar">
@@ -358,7 +319,7 @@ export function App() {
             <span className="brand-name">球球智能体</span>
             <span className="build-badge">{appBuildLabel}</span>
           </div>
-          <h1>球球资产控制台</h1>
+          <h1>球球竞技场</h1>
         </div>
         <div className="match-summary">
           <div className="user-badge">
@@ -394,6 +355,14 @@ export function App() {
           platform={platform}
           replay={replay}
           onOpenArena={() => setView("arena")}
+          onOpenCreate={() => {
+            setProfileEntryTab("create");
+            setView("profile");
+          }}
+          onOpenAgentHandoff={() => {
+            setProfileEntryTab("agent");
+            setView("profile");
+          }}
         />
       )}
 
@@ -422,11 +391,11 @@ export function App() {
       {view === "profile" && platform && (
         <ProfileView
           currentUser={currentUser}
+          entryTab={profileEntryTab}
           operation={operation}
           platform={platform}
           selectedBall={selectedPlatformBall}
           onCreateBall={createBallFromUi}
-          onDeleteBall={deleteBallFromUi}
           onSaveAppearance={saveAppearanceFromUi}
           onSelectBall={setSelectedPlatformBallId}
         />
@@ -456,37 +425,27 @@ function HomeView({
   platform,
   replay,
   onOpenArena,
+  onOpenCreate,
+  onOpenAgentHandoff,
 }: {
   platform: PlatformSnapshot;
   replay: Replay;
   onOpenArena: () => void;
+  onOpenCreate: () => void;
+  onOpenAgentHandoff: () => void;
 }) {
   const stats = platformStats(platform);
   const topRows = platform.leaderboard.slice(0, 4);
   return (
     <section className="home-page">
-      <div className="home-grid">
-        <div className="home-stat-card">
-          <span>当前项目总玩家数</span>
-          <strong>{platform.users.length}</strong>
-          <em>已登录或已创建球球的用户</em>
-        </div>
-        <div className="home-stat-card">
-          <span>球球总数</span>
-          <strong>{platform.balls.length}</strong>
-          <em>每个用户最多 {platform.userLimits.maxBallsPerUser} 个</em>
-        </div>
-        <button className="home-stat-card quality" onClick={onOpenArena} type="button">
-          <span>球球质量合计</span>
-          <strong>{formatNumber(stats.totalQuality)}</strong>
-          <em>按历史最好分数与胜场折算</em>
-        </button>
-      </div>
-
-      <section className="home-stage">
+      <section className="home-stage home-arena-hero">
         <div className="section-heading">
-          <h2>项目动态图</h2>
-          <span>{replay.results.length} 个参赛体</span>
+          <h2>自动竞技场</h2>
+          <span>{platform.autoMatch.minPlayers} 球成局</span>
+        </div>
+        <div className="hero-copy">
+          <strong>自动开局</strong>
+          <p>最新战场已就绪，球球够数后自动开局。</p>
         </div>
         <div className="orbit-board" aria-label="球球动态图">
           <span className="orbit-ring ring-one" />
@@ -500,11 +459,57 @@ function HomeView({
             />
           ))}
           <div className="orbit-core">
-            <strong>{platform.matches.length}</strong>
-            <span>累计对局</span>
+            <strong>{platform.autoMatch.minPlayers} 球</strong>
+            <span>够数开战</span>
           </div>
         </div>
       </section>
+
+      <section className="home-panel home-command-panel">
+        <div className="section-heading">
+          <h2>开场路径</h2>
+          <span>人类入口</span>
+        </div>
+        <div className="home-flow">
+          <button onClick={onOpenCreate} type="button">
+            <b>1</b>
+            <span>
+              <strong><UserPlus size={18} />创建外观</strong>
+              <em>名称、主色、花纹</em>
+            </span>
+          </button>
+          <button onClick={onOpenAgentHandoff} type="button">
+            <b>2</b>
+            <span>
+              <strong><Copy size={18} />交给 Agent</strong>
+              <em>技能、战略、方向</em>
+            </span>
+          </button>
+          <button onClick={onOpenArena} type="button">
+            <b>3</b>
+            <span>
+              <strong><Eye size={18} />观看比赛</strong>
+              <em>{platform.matches.length} 局战报</em>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <div className="home-grid">
+        <div className="home-stat-card">
+          <span>当前用户</span>
+          <strong>{platform.users.length}</strong>
+        </div>
+        <div className="home-stat-card">
+          <span>球球总数</span>
+          <strong>{platform.balls.length}</strong>
+        </div>
+        <button className="home-stat-card quality" onClick={onOpenArena} type="button">
+          <span>战力热度</span>
+          <strong>{formatNumber(stats.totalQuality)}</strong>
+          <em>{replay.results.length} 个参赛体正在回放</em>
+        </button>
+      </div>
 
       <section className="home-panel chart-card">
         <div className="section-heading">
@@ -556,15 +561,16 @@ function ArenaView(props: ReplayViewProps & {
 
 function ProfileView({
   currentUser,
+  entryTab,
   operation,
   platform,
   selectedBall,
   onCreateBall,
-  onDeleteBall,
   onSaveAppearance,
   onSelectBall,
 }: {
   currentUser: AuthUser;
+  entryTab: ProfileTabKey;
   operation: string | null;
   platform: PlatformSnapshot;
   selectedBall: PlatformBall | null;
@@ -574,7 +580,6 @@ function ProfileView({
     motto?: string;
     appearance?: Partial<BallAppearance>;
   }) => Promise<PlatformBall | null>;
-  onDeleteBall: (ballId: string) => Promise<PlatformBall | null>;
   onSaveAppearance: (input: {
     ballId: string;
     name?: string;
@@ -586,6 +591,9 @@ function ProfileView({
   const [tab, setTab] = useState<ProfileTabKey>("balls");
   const ownedCount = ownedBallCount(platform, currentUser.userId);
   const createLimitReached = ownedCount >= platform.userLimits.maxBallsPerUser;
+  useEffect(() => {
+    setTab(entryTab);
+  }, [entryTab]);
   function openBallSettings(ballId: string) {
     onSelectBall(ballId);
     setTab("appearance");
@@ -626,7 +634,6 @@ function ProfileView({
           platform={platform}
           selectedBall={selectedBall}
           onCreateBall={onCreateBall}
-          onDeleteBall={onDeleteBall}
           onPanelChange={(panel) => setTab(panel)}
           onSaveAppearance={onSaveAppearance}
           onSelectBall={openBallSettings}
@@ -702,7 +709,6 @@ function PlatformView({
   operation,
   panel,
   onCreateBall,
-  onDeleteBall,
   onPanelChange,
   onSaveAppearance,
   onSelectBall,
@@ -718,7 +724,6 @@ function PlatformView({
     motto?: string;
     appearance?: Partial<BallAppearance>;
   }) => Promise<PlatformBall | null>;
-  onDeleteBall: (ballId: string) => Promise<PlatformBall | null>;
   onPanelChange: (panel: PlatformTabKey) => void;
   onSaveAppearance: (input: {
     ballId: string;
@@ -729,7 +734,6 @@ function PlatformView({
   onSelectBall: (ballId: string) => void;
 }) {
   const ownerId = currentUser.userId;
-  const [ownerName, setOwnerNameState] = useState(currentUser.displayName);
   const [newBallName, setNewBallName] = useState("我的球球");
   const [newColor, setNewColor] = useState("#2563eb");
   const [editName, setEditName] = useState(selectedBall?.name ?? "");
@@ -745,7 +749,7 @@ function PlatformView({
   const editableBall = myBalls.find((ball) => ball.ballId === activeBallId) ?? myBalls[0] ?? null;
   const ownerBallCount = ownedBallCount(platform, ownerId);
   const createLimitReached = ownerBallCount >= platform.userLimits.maxBallsPerUser;
-  const agentEditRule = "请分析最近对战记录，让它更稳健，减少被大球吞掉的次数。";
+  const agentEditRule = "由 Agent 根据最近对战记录自主定义球球的行为、技能、战略和移动方向；人类只负责外观。";
   const agentUploadUrl = `${window.location.origin}/api/agent/ball-edit-upload`;
 
   useEffect(() => {
@@ -770,7 +774,7 @@ function PlatformView({
         `当前托管档位：${editableBall.agentProfileLabel}`,
         `当前专属技能：${editableBall.skillLabel}`,
         `技能说明：${editableBall.skillDescription}`,
-        `球球编辑规则：${agentEditRule}`,
+        `权限边界：${agentEditRule}`,
         "",
         `上传端口：POST ${agentUploadUrl}`,
         "请求格式：JSON",
@@ -826,13 +830,9 @@ function PlatformView({
     window.setTimeout(() => setCopied(false), 1200);
   }
 
-  function updateOwnerName(value: string) {
-    setOwnerNameState(value);
-  }
-
   async function createBall() {
     const created = await onCreateBall({
-      ownerName,
+      ownerName: currentUser.displayName,
       name: newBallName,
       appearance: { color: newColor },
     });
@@ -852,15 +852,6 @@ function PlatformView({
   function chooseEditableBall(ballId: string) {
     setActiveBallId(ballId);
     onSelectBall(ballId);
-  }
-
-  async function deleteEditableBall() {
-    if (!editableBall) return;
-    const confirmed = window.confirm(`确定删除「${editableBall.name}」吗？删除后这个球球会从列表、排行榜和记录里移除。`);
-    if (!confirmed) return;
-    const nextBall = await onDeleteBall(editableBall.ballId);
-    setActiveBallId(nextBall?.ballId ?? null);
-    if (!nextBall) onPanelChange("balls");
   }
 
   function BallSelector() {
@@ -892,7 +883,7 @@ function PlatformView({
         <div className="content-panel my-balls-panel">
           <div className="section-heading">
             <h2>我的球球</h2>
-            <span>创建与查看</span>
+            <span>外观与战绩</span>
           </div>
           <div className="ball-grid">
             {myBalls.map((ball) => (
@@ -904,7 +895,7 @@ function PlatformView({
               />
             ))}
           </div>
-          {myBalls.length === 0 && <EmptyPanel text="你还没有创建球球，先去创建一个。" />}
+          {myBalls.length === 0 && <EmptyPanel text="先创建一个球球外观，再复制给 Agent 接管。" />}
         </div>
       )}
 
@@ -917,11 +908,7 @@ function PlatformView({
             </div>
             <div className="form-stack">
               <label>
-                <span>用户名</span>
-                <input value={ownerName} onChange={(event) => updateOwnerName(event.target.value)} />
-              </label>
-              <label>
-                <span>球球名称</span>
+                <span>出场名</span>
                 <input value={newBallName} onChange={(event) => setNewBallName(event.target.value)} />
               </label>
               <label>
@@ -941,7 +928,7 @@ function PlatformView({
           </div>
           <div className="content-panel span-7">
             <div className="section-heading">
-              <h2>用户边界</h2>
+              <h2>权限边界</h2>
               <span>最多 {platform.userLimits.maxBallsPerUser} 个</span>
             </div>
             <div className="rule-grid two-column">
@@ -955,7 +942,7 @@ function PlatformView({
       {panel === "appearance" && (
         <div className="content-panel">
           <div className="section-heading">
-            <h2>编辑样式</h2>
+            <h2>编辑外观</h2>
             <span>{editableBall ? editableBall.name : "未选中"}</span>
           </div>
           {editableBall ? (
@@ -965,7 +952,7 @@ function PlatformView({
                 <BallPreview ball={editableBall} color={editColor} accentColor={editAccent} pattern={editPattern} />
                 <div className="form-stack">
                   <label>
-                    <span>球球名称</span>
+                    <span>出场名</span>
                     <input value={editName} onChange={(event) => setEditName(event.target.value)} />
                   </label>
                   <div className="color-row">
@@ -1001,15 +988,6 @@ function PlatformView({
                   >
                     保存外观
                   </button>
-                  <button
-                    className="danger-action"
-                    disabled={busy}
-                    onClick={deleteEditableBall}
-                    type="button"
-                  >
-                    <Trash2 size={16} />
-                    删除球球
-                  </button>
                 </div>
               </div>
             </div>
@@ -1019,10 +997,10 @@ function PlatformView({
         </div>
       )}
 
-      {panel === "rules" && (
+      {panel === "agent" && (
         <div className="content-panel">
           <div className="section-heading">
-            <h2>规则编辑</h2>
+            <h2>复制给 Agent</h2>
             <span>{platform.sharePort.label}</span>
           </div>
           {editableBall ? (
@@ -1032,11 +1010,11 @@ function PlatformView({
                 <span className="ball-avatar" style={{ background: editableBall.appearance.color, borderColor: editableBall.appearance.accentColor }} />
                 <div>
                   <h3>{editableBall.name}</h3>
-                  <p>当前技能：{editableBall.skillLabel}。已准备好专属编号、技能边界和编辑上传指引。</p>
+                  <p>当前技能：{editableBall.skillLabel}。复制后交给 Agent，由 Agent 决定行为、技能、战略和移动方向。</p>
                 </div>
                 <button className="copy-action" onClick={copyAiPacket} type="button">
                   {copied ? <Check size={15} /> : <Copy size={15} />}
-                  {copied ? "已复制" : "复制给智能体"}
+                  {copied ? "已复制" : "复制给 Agent"}
                 </button>
               </div>
             </div>

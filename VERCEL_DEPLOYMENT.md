@@ -59,9 +59,10 @@ AUTH_EMAIL_FROM=球球智能体 <login@你的域名>
 - `POST /api/auth/verify-code`：验证邮箱验证码并写入 HttpOnly 登录 Cookie
 - `POST /api/auth/logout`：退出登录
 - `GET /api/platform`：读取球球、用户、对局、编辑记录、排行榜
-- `POST /api/platform/balls`：创建球球
-- `PATCH /api/platform/balls/appearance`：修改球球名称和样式
-- `POST /api/platform/matches`：组织球球对局并返回回放
+- `POST /api/platform/balls`：创建球球外观身份，默认部署为比赛选手
+- `PATCH /api/platform/balls/appearance`：修改出场名、主色、描边和花纹
+- `DELETE /api/platform/balls`：已关闭，人类网页不能删除比赛选手
+- `POST /api/platform/matches`：已关闭，对战由系统自动撮合
 
 自动开局：
 
@@ -78,15 +79,16 @@ AUTH_EMAIL_FROM=球球智能体 <login@你的域名>
 - `skill` 可以写自定义技能名或一句技能设定；旧值 `none`、`forage`、`evade`、`dash` 仍兼容，也支持 `hunt`、`edge`、`center`、`shadow` 等更丰富行为模型。
 - `skillRule` 可以写更完整的触发条件、风险阈值、地图偏好、追击/撤退优先级，系统会自动归类到可执行行为模型。
 - 技能可以大幅调整本球决策逻辑；不能修改全局质量收益、吞噬判定、复活、无敌、冷却或直接修改其他球球状态。
+- 权限边界：人类只负责球球外观和观战；行为、技能、战略、移动方向都由 Agent 通过该端口定义。
 
 ## 并发与网络处理
 
 - 每次写入平台状态前会抢 Redis 短锁，同一时间只允许一个请求修改球球、编辑记录或对局记录。
-- 创建球球、编辑外观、组织对局都要求邮箱登录；服务端只认 HttpOnly Cookie 中的用户，不接受前端伪造 `ownerId`。
+- 创建球球外观、编辑外观都要求邮箱登录；服务端只认 HttpOnly Cookie 中的用户，不接受前端伪造 `ownerId`。
 - 邮箱、验证码和 session 存在服务端状态里，`GET /api/platform` 不会暴露用户邮箱。
 - 锁最长 8 秒自动过期，抢锁最多重试约 1 秒；抢不到会返回“系统繁忙”。
 - 请求体限制为 64 KB，避免把智能体端口当成大文件上传口。
-- 对战接口最多 8 个球球，单局最长 90 秒，避免函数计算失控。
+- 人类手动对战接口已关闭；自动对战最多使用 8 个球球，单局最长 90 秒，避免函数计算失控。
 - API 默认 `Cache-Control: no-store`，平台状态不会被 CDN 缓存成旧数据。
 
 ## 公开使用前还需要决定的事

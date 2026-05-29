@@ -11,12 +11,9 @@ import { runEvaluation } from "../core/evaluate.js";
 import {
   agentTuneBallInState,
   createUserBallInState,
-  deleteUserBallInState,
-  runPlatformBattleInState,
   updateBallAppearanceInState,
   type AgentProfile,
   type BallAppearance,
-  type RunPlatformBattleInput,
 } from "../core/platform.js";
 import { mutatePlatformState, readPlatformSnapshotFromStore } from "../core/platform-storage.js";
 import { runDemoMatch } from "../core/run-sim.js";
@@ -139,29 +136,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (req.method === "DELETE" && route === "/platform/balls") {
-      const user = await requireAuth(req);
-      const body = await readJsonBody(req);
-      const ballId = requiredString(body.ballId, "ballId");
-      const snapshot = await mutatePlatformState((state) => {
-        const ball = state.balls.find((item) => item.ballId === ballId);
-        if (!ball) throw new RequestError("没有找到这个球球", 404);
-        if (ball.ownerId !== user.userId) throw new RequestError("只能删除自己的球球", 403);
-        return deleteUserBallInState(state, ballId);
-      });
-      sendJson(res, 200, snapshot);
+      sendJson(res, 403, { error: "人类网页不能删除比赛选手，只能编辑外观和观看比赛" });
       return;
     }
 
     if (req.method === "POST" && route === "/platform/matches") {
-      await requireAuth(req);
-      const body = await readJsonBody(req);
-      const input: RunPlatformBattleInput = {
-        seed: optionalPositiveInt(body.seed, "seed", 99999999),
-        durationSeconds: optionalPositiveInt(body.durationSeconds, "durationSeconds", 90),
-        ballIds: optionalStringArray(body.ballIds, "ballIds", 8),
-      };
-      const result = await mutatePlatformState((state) => runPlatformBattleInState(state, input));
-      sendJson(res, 200, result);
+      sendJson(res, 403, { error: "对战由系统在人数足够后自动撮合，不允许人类手动开局" });
       return;
     }
 
@@ -222,14 +202,6 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalObject(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
-}
-
-function optionalStringArray(value: unknown, name: string, maxLength: number): string[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value)) throw new RequestError(`${name} 必须是字符串数组`);
-  const items = value.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim());
-  if (items.length > maxLength) throw new RequestError(`${name} 最多只能包含 ${maxLength} 个球球`);
-  return items;
 }
 
 function optionalPositiveInt(value: unknown, name: string, max: number): number | undefined {

@@ -1,5 +1,3 @@
-import type { Replay } from "../core/types";
-
 export type AgentProfile = "balanced" | "conservative" | "greedy";
 export type BallStatus = "draft" | "deployed";
 export type BallPattern = "solid" | "ring" | "spark";
@@ -131,12 +129,6 @@ export interface PlatformSnapshot {
   };
 }
 
-export interface PlatformRunResponse {
-  snapshot: PlatformSnapshot;
-  replay: Replay;
-  match: PlatformMatchRecord;
-}
-
 export interface AuthUser {
   userId: string;
   email: string;
@@ -198,20 +190,6 @@ export async function savePlatformAppearance(input: {
 }): Promise<PlatformSnapshot> {
   return requestJson<PlatformSnapshot>("/api/platform/balls/appearance", {
     method: "PATCH",
-    body: JSON.stringify(input),
-  });
-}
-
-export async function deletePlatformBall(ballId: string): Promise<PlatformSnapshot> {
-  return requestJson<PlatformSnapshot>("/api/platform/balls", {
-    method: "DELETE",
-    body: JSON.stringify({ ballId }),
-  });
-}
-
-export async function runPlatformMatch(input: { seed?: number; durationSeconds?: number; ballIds?: string[] }): Promise<PlatformRunResponse> {
-  return requestJson<PlatformRunResponse>("/api/platform/matches", {
-    method: "POST",
     body: JSON.stringify(input),
   });
 }

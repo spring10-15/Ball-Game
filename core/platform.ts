@@ -602,8 +602,8 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
       fields: ["actor", "ballId", "editRule", "profile", "skill", "skillRule"],
     },
     agentRules: {
-      userCanEdit: ["球球名称", "颜色", "花纹"],
-      agentOnly: ["策略档位", "专属技能", "触发条件", "风险阈值", "地图偏好", "追击/撤退优先级"],
+      userCanEdit: ["出场名", "主色", "描边", "花纹"],
+      agentOnly: ["移动方向", "策略档位", "专属技能", "触发条件", "风险阈值", "地图偏好", "追击/撤退优先级"],
     },
     autoMatch: {
       minPlayers: AUTO_MATCH_MIN_PLAYERS,
