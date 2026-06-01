@@ -20,6 +20,8 @@ import {
 import { useEffect, useState } from "react";
 
 import type { Event, MatchResult, Replay } from "../core/types";
+import privacyComicUrl from "./assets/privacy-comic-v1.png";
+import privacyPolicySource from "./assets/privacy-policy.md?raw";
 import { ReplayCanvas } from "./ReplayCanvas";
 import {
   agentIdForBall,
@@ -65,6 +67,7 @@ type PlatformTabKey = "balls" | "create" | "appearance" | "agent";
 
 const playbackSpeeds = [1, 2, 4, 8, 16];
 const appBuildLabel = "v20260529";
+const privacyPolicyDownloadUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(privacyPolicySource)}`;
 const eventFilters: Array<Event["type"] | "all"> = ["all", "kill", "death", "burst", "danger-enter", "decision-error"];
 const viewItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: "home", label: "首页", icon: <Activity size={17} /> },
@@ -1076,6 +1079,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [phase, setPhase] = useState<"email" | "code">("email");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
 
   async function requestCode() {
     setBusy(true);
@@ -1152,8 +1156,38 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
             </button>
           )}
         </div>
+        <div className="privacy-entry">
+          <button onClick={() => setPrivacyOpen(true)} type="button">登录即代表同意隐私协议</button>
+        </div>
       </section>
+      {privacyOpen && <PrivacyModal onClose={() => setPrivacyOpen(false)} />}
     </main>
+  );
+}
+
+function PrivacyModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="privacy-modal-backdrop" role="presentation">
+      <section aria-modal="true" className="privacy-modal" role="dialog" aria-labelledby="privacy-title">
+        <div className="privacy-modal-head">
+          <div>
+            <span>隐私协议</span>
+            <h2 id="privacy-title">漫画版说明</h2>
+          </div>
+          <button aria-label="关闭隐私协议" onClick={onClose} type="button">关闭</button>
+        </div>
+        <img alt="agenty.cloud 隐私协议六格漫画说明" className="privacy-comic" src={privacyComicUrl} />
+        <div className="privacy-summary">
+          <strong>简短版</strong>
+          <span>我们用邮箱完成登录，用球球和比赛数据保存你的资产与战报，不公开邮箱、不出售数据。</span>
+          <span>验证码保存约 10 分钟，登录状态约 30 天；你可以通过 login@agenty.cloud 请求查询、更正或删除数据。</span>
+        </div>
+        <div className="privacy-actions">
+          <a download="agenty-cloud-privacy-policy.md" href={privacyPolicyDownloadUrl}>下载隐私协议源文件</a>
+          <button onClick={onClose} type="button">我知道了</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
