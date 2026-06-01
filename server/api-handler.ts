@@ -11,6 +11,7 @@ import { runEvaluation } from "../core/evaluate.js";
 import {
   agentTuneBallInState,
   createUserBallInState,
+  runPlatformEventInState,
   updateBallAppearanceInState,
   type AgentProfile,
   type BallAppearance,
@@ -137,6 +138,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (req.method === "DELETE" && route === "/platform/balls") {
       sendJson(res, 403, { error: "人类网页不能删除比赛选手，只能编辑外观和观看比赛" });
+      return;
+    }
+
+    if (req.method === "POST" && route === "/platform/events/join") {
+      const user = await requireAuth(req);
+      const result = await mutatePlatformState((state) => runPlatformEventInState(state, user.userId));
+      sendJson(res, 200, result);
       return;
     }
 

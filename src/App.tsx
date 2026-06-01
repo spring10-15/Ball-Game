@@ -24,6 +24,7 @@ import { ReplayCanvas } from "./ReplayCanvas";
 import {
   agentIdForBall,
   createPlatformBall,
+  joinPlatformEvent,
   loadPlatformSnapshot,
   loadCurrentUser,
   logoutCurrentUser,
@@ -105,6 +106,7 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null | undefined>(undefined);
   const [selectedPlatformBallId, setSelectedPlatformBallId] = useState<string | null>(null);
   const [profileEntryTab, setProfileEntryTab] = useState<ProfileTabKey>("balls");
+  const [arenaEntryTab, setArenaEntryTab] = useState<ArenaTabKey>("matches");
 
   useEffect(() => {
     Promise.all([loadReplay(), loadEvalSummary(), loadCurrentUser()])
@@ -308,6 +310,24 @@ export function App() {
     }
   }
 
+  async function joinEventFromUi() {
+    setOperation("event");
+    try {
+      const result = await joinPlatformEvent();
+      setPlatform(result.snapshot);
+      setReplay(result.replay);
+      setFrameIndex(0);
+      setSelectedAgentId(result.replay.results[0]?.agentId ?? null);
+      setIsPlaying(true);
+      setArenaEntryTab("replay");
+      setView("arena");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperation(null);
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="topbar">
@@ -354,7 +374,10 @@ export function App() {
         <HomeView
           platform={platform}
           replay={replay}
-          onOpenArena={() => setView("arena")}
+          onOpenArena={() => {
+            setArenaEntryTab("matches");
+            setView("arena");
+          }}
           onOpenCreate={() => {
             setProfileEntryTab("create");
             setView("profile");
@@ -368,6 +391,7 @@ export function App() {
 
       {view === "arena" && platform && (
         <ArenaView
+          entryTab={arenaEntryTab}
           colorOfAgent={colorOfAgent}
           frameIndex={frameIndex}
           isPlaying={isPlaying}
@@ -378,7 +402,9 @@ export function App() {
           onReset={reset}
           onSelectAgent={setSelectedAgentId}
           onSelectBall={setSelectedPlatformBallId}
+          onJoinEvent={joinEventFromUi}
           onSpeedChange={setSpeed}
+          operation={operation}
           platform={platform}
           currentUser={currentUser}
           replay={replay}
@@ -534,9 +560,15 @@ function HomeView({
 function ArenaView(props: ReplayViewProps & {
   platform: PlatformSnapshot;
   currentUser: AuthUser;
+  entryTab: ArenaTabKey;
+  operation: string | null;
+  onJoinEvent: () => void;
   onSelectBall: (ballId: string) => void;
 }) {
   const [tab, setTab] = useState<ArenaTabKey>("matches");
+  useEffect(() => {
+    setTab(props.entryTab);
+  }, [props.entryTab]);
   return (
     <section className="platform-page">
       <div className="content-panel">
@@ -552,7 +584,17 @@ function ArenaView(props: ReplayViewProps & {
           ))}
         </nav>
       </div>
-      {tab === "matches" && <MatchRecordsView platform={props.platform} ownerId={props.currentUser.userId} onSelectBall={props.onSelectBall} />}
+      {tab === "matches" && (
+        <>
+          <EventActivityView
+            currentUser={props.currentUser}
+            operation={props.operation}
+            platform={props.platform}
+            onJoinEvent={props.onJoinEvent}
+          />
+          <MatchRecordsView platform={props.platform} onSelectBall={props.onSelectBall} />
+        </>
+      )}
       {tab === "leaderboard" && <LeaderboardView platform={props.platform} onSelectBall={props.onSelectBall} />}
       {tab === "replay" && <ReplayView {...props} />}
     </section>
@@ -1214,42 +1256,80 @@ function formatDate(value: string): string {
     .padStart(2, "0")}`;
 }
 
+function EventActivityView({
+  currentUser,
+  operation,
+  platform,
+  onJoinEvent,
+}: {
+  currentUser: AuthUser;
+  operation: string | null;
+  platform: PlatformSnapshot;
+  onJoinEvent: () => void;
+}) {
+  const myBallCount = platform.balls.filter((ball) => ball.ownerId === currentUser.userId).length;
+  const canJoin = myBallCount > 0 && platform.users.length >= platform.event.minUsers;
+  const latestEvent = platform.matches.find((match) => match.source === "event");
+  return (
+    <section className="wide-grid">
+      <div className="content-panel span-12 event-activity">
+        <div>
+          <span className="event-kicker">{platform.event.label}</span>
+          <h2>参加赛事，立即开战</h2>
+          <p>{platform.event.minUsers} 位真实用户即可开赛；系统会为每位用户选 1 个已部署球球参赛。</p>
+        </div>
+        <div className="event-activity-meta">
+          <MetricMini label="当前用户" value={`${platform.users.length} 位`} />
+          <MetricMini label="我的球球" value={`${myBallCount} 个`} />
+          <MetricMini label="最近赛事" value={latestEvent ? formatDate(latestEvent.createdAt) : "暂无"} />
+        </div>
+        <button disabled={!canJoin || operation === "event"} onClick={onJoinEvent} type="button">
+          <Play size={16} />
+          {operation === "event" ? "赛事开局中" : "参加赛事"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function MatchRecordsView({
   platform,
-  ownerId,
   onSelectBall,
 }: {
   platform: PlatformSnapshot;
-  ownerId: string;
   onSelectBall: (ballId: string) => void;
 }) {
-  const myBalls = platform.balls.filter((ball) => ball.ownerId === ownerId);
-  const myBallIds = new Set(myBalls.map((ball) => ball.ballId));
-  const rows = platform.matches.flatMap((match) =>
-    match.results
-      .filter((result) => myBallIds.has(result.ballId))
-      .map((result) => ({ match, result })),
-  );
   return (
     <section className="wide-grid">
       <div className="content-panel span-12">
         <div className="section-heading">
-          <h2>我的参赛记录</h2>
-          <span>{rows.length} 条</span>
+          <h2>完整对战记录</h2>
+          <span>{platform.matches.length} 局</span>
         </div>
-        {rows.length > 0 ? (
-          <div className="match-list">
-            {rows.map(({ match, result }) => (
-              <div className="match-row" key={`${match.matchId}-${result.ballId}`}>
-                <span>{formatDate(match.createdAt)}</span>
-                <strong>{result.ballName}</strong>
-                <span>第 {result.rank} 名</span>
-                <b>分数 {formatNumber(result.score)} ｜ 胜者 {winnerName(platform, match.winnerBallId)}</b>
-              </div>
+        {platform.matches.length > 0 ? (
+          <div className="match-card-list">
+            {platform.matches.map((match) => (
+              <article className="match-card" key={match.matchId}>
+                <div className="match-card-head">
+                  <span>{match.eventName ?? (match.source === "auto" ? "自动赛" : "平台对局")}</span>
+                  <strong>{formatDate(match.createdAt)}</strong>
+                  <b>胜者 {winnerName(platform, match.winnerBallId)}</b>
+                </div>
+                <div className="match-result-list">
+                  {match.results.map((result) => (
+                    <button key={`${match.matchId}-${result.ballId}`} onClick={() => onSelectBall(result.ballId)} type="button">
+                      <span>#{result.rank}</span>
+                      <strong>{result.ballName}</strong>
+                      <em>{result.ownerName}</em>
+                      <b>{formatNumber(result.score)}</b>
+                    </button>
+                  ))}
+                </div>
+              </article>
             ))}
           </div>
         ) : (
-          <EmptyPanel text="你的球球还没有参加过对战。" />
+          <EmptyPanel text="还没有赛事记录。" />
         )}
       </div>
     </section>

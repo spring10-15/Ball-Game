@@ -57,6 +57,11 @@ export interface AutoMatchState {
   lastLineupKey?: string;
 }
 
+export interface PlatformEventState {
+  lastRunAt?: string;
+  lastMatchId?: string;
+}
+
 export interface BallAppearance {
   color: string;
   accentColor: string;
@@ -100,6 +105,8 @@ export interface PlatformBattleResult {
 
 export interface PlatformMatchRecord {
   matchId: string;
+  source?: "auto" | "event";
+  eventName?: string;
   seed: number;
   createdAt: string;
   durationSeconds: number;
@@ -133,6 +140,7 @@ export interface PlatformState {
   authCodes?: AuthCodeRecord[];
   authSessions?: AuthSessionRecord[];
   autoMatch?: AutoMatchState;
+  event?: PlatformEventState;
 }
 
 export interface BallRecord {
@@ -185,6 +193,12 @@ export interface PlatformSnapshot {
     cooldownSeconds: number;
     lastRunAt?: string;
   };
+  event: {
+    label: string;
+    minUsers: number;
+    lastRunAt?: string;
+    lastMatchId?: string;
+  };
 }
 
 export interface CreateUserBallInput {
@@ -211,6 +225,9 @@ export interface RunPlatformBattleInput {
 export const AUTO_MATCH_MIN_PLAYERS = 3;
 export const AUTO_MATCH_COOLDOWN_SECONDS = 300;
 const AUTO_MATCH_DURATION_SECONDS = 60;
+export const EVENT_MATCH_MIN_USERS = 2;
+const EVENT_MATCH_DURATION_SECONDS = 60;
+const EVENT_MATCH_LABEL = "球球公开赛";
 
 export interface AgentTuneInput {
   ballId: string;
@@ -346,6 +363,27 @@ export function runPlatformBattle(
   savePlatformState(state, outDir);
   const paths = writePlatformReplay(result.replay, outDir);
   return { ...result, paths };
+}
+
+export function runPlatformEventInState(
+  state: PlatformState,
+  userId: string,
+  seed = Math.floor(Date.now() % 100000),
+): { snapshot: PlatformSnapshot; replay: Replay; match: PlatformMatchRecord } {
+  const selectedBalls = selectEventBalls(state, userId);
+  const result = runPlatformBattleInState(state, {
+    seed,
+    durationSeconds: EVENT_MATCH_DURATION_SECONDS,
+    ballIds: selectedBalls.map((ball) => ball.ballId),
+  }, {
+    source: "event",
+    eventName: EVENT_MATCH_LABEL,
+  });
+  state.event = {
+    lastRunAt: result.match.createdAt,
+    lastMatchId: result.match.matchId,
+  };
+  return result;
 }
 
 export function createInitialPlatformState(): PlatformState {
@@ -490,6 +528,7 @@ export function agentTuneBallInState(state: PlatformState, input: AgentTuneInput
 export function runPlatformBattleInState(
   state: PlatformState,
   input: RunPlatformBattleInput,
+  metadata: Pick<PlatformMatchRecord, "source" | "eventName"> = {},
 ): { snapshot: PlatformSnapshot; replay: Replay; match: PlatformMatchRecord } {
   const selectedBalls = selectBattleBalls(state, input.ballIds);
   if (selectedBalls.length < 2) {
@@ -505,59 +544,24 @@ export function runPlatformBattleInState(
     config: { seed, durationSeconds },
     agents,
   });
-  const match = buildMatchRecord(replay, selectedBalls, state.users, seed, durationSeconds);
+  const match = {
+    ...buildMatchRecord(replay, selectedBalls, state.users, seed, durationSeconds),
+    ...metadata,
+  };
   state.matches.unshift(match);
   state.matches = state.matches.slice(0, 80);
   return { snapshot: snapshotFromPlatformState(state), replay, match };
 }
 
 function makeInitialState(): PlatformState {
-  const now = new Date().toISOString();
   return {
     schemaVersion: 1,
-    users: [
-      { userId: "u_ling", displayName: "林舟", createdAt: now },
-      { userId: "u_yun", displayName: "云栖", createdAt: now },
-      { userId: "u_qi", displayName: "齐墨", createdAt: now },
-    ],
-    balls: [
-      makeSeedBall("ball_ling_01", "u_ling", "青锋球", "稳稳变大，少犯错。", "#2563eb", "#dbeafe", "ring", "balanced", now),
-      makeSeedBall("ball_yun_01", "u_yun", "橙焰球", "机会来了就冲。", "#ea580c", "#ffedd5", "spark", "greedy", now),
-      makeSeedBall("ball_qi_01", "u_qi", "墨盾球", "保命就是输出。", "#0f766e", "#ccfbf1", "solid", "conservative", now),
-    ],
+    users: [],
+    balls: [],
     matches: [],
     editRecords: [],
     autoMatch: {},
-  };
-}
-
-function makeSeedBall(
-  ballId: string,
-  ownerId: string,
-  name: string,
-  motto: string,
-  color: string,
-  accentColor: string,
-  pattern: BallPattern,
-  profile: AgentProfile,
-  now: string,
-  skill: BallSkillMode = "none",
-): PlatformBall {
-  return {
-    ballId,
-    ownerId,
-    name,
-    motto,
-    appearance: { color, accentColor, pattern },
-    agentProfile: profile,
-    skill,
-    skillName: skillLabels[skill],
-    skillRule: skillDescriptions[skill],
-    internalRevision: 1,
-    status: "deployed",
-    createdAt: now,
-    updatedAt: now,
-    deployedAt: now,
+    event: {},
   };
 }
 
@@ -609,6 +613,12 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
       minPlayers: AUTO_MATCH_MIN_PLAYERS,
       cooldownSeconds: AUTO_MATCH_COOLDOWN_SECONDS,
       lastRunAt: state.autoMatch?.lastRunAt,
+    },
+    event: {
+      label: EVENT_MATCH_LABEL,
+      minUsers: EVENT_MATCH_MIN_USERS,
+      lastRunAt: state.event?.lastRunAt,
+      lastMatchId: state.event?.lastMatchId,
     },
   };
 }
@@ -701,6 +711,33 @@ function selectAutoMatchBalls(state: PlatformState): PlatformBall[] {
     .slice(0, 8);
 }
 
+function selectEventBalls(state: PlatformState, actorUserId: string): PlatformBall[] {
+  const realUserIds = new Set(state.users.filter(isRealUser).map((user) => user.userId));
+  if (!realUserIds.has(actorUserId)) throw new Error("只有真实登录用户可以参加赛事");
+  const ballsByOwner = new Map<string, PlatformBall>();
+  for (const ball of state.balls) {
+    if (ball.status !== "deployed" || !realUserIds.has(ball.ownerId)) continue;
+    const current = ballsByOwner.get(ball.ownerId);
+    if (!current || Date.parse(ball.deployedAt ?? ball.createdAt) > Date.parse(current.deployedAt ?? current.createdAt)) {
+      ballsByOwner.set(ball.ownerId, ball);
+    }
+  }
+  if (ballsByOwner.size < EVENT_MATCH_MIN_USERS) {
+    throw new Error(`至少需要 ${EVENT_MATCH_MIN_USERS} 位真实用户拥有球球才能参加赛事`);
+  }
+  return [...ballsByOwner.values()]
+    .sort((a, b) => {
+      if (a.ownerId === actorUserId) return -1;
+      if (b.ownerId === actorUserId) return 1;
+      return Date.parse(a.deployedAt ?? a.createdAt) - Date.parse(b.deployedAt ?? b.createdAt);
+    })
+    .slice(0, 8);
+}
+
+function isRealUser(user: PlatformUser): boolean {
+  return Boolean(user.email && !user.email.endsWith("@example.com"));
+}
+
 function autoMatchLineupKey(balls: PlatformBall[]): string {
   return balls
     .map((ball) => [
@@ -721,11 +758,49 @@ function normalizeState(state: PlatformState): PlatformState {
     state.autoMatch = {};
     changed = true;
   }
+  if (!state.event) {
+    state.event = {};
+    changed = true;
+  }
+  const activeSessionUserIds = new Set(Array.isArray(state.authSessions) ? state.authSessions.map((session) => session.userId) : []);
+  const userIdRedirects = dedupeUsersByEmail(state.users, activeSessionUserIds);
+  if (userIdRedirects.size > 0) {
+    for (const ball of state.balls) {
+      ball.ownerId = userIdRedirects.get(ball.ownerId) ?? ball.ownerId;
+    }
+    if (Array.isArray(state.editRecords)) {
+      for (const record of state.editRecords) {
+        record.ownerId = userIdRedirects.get(record.ownerId) ?? record.ownerId;
+      }
+    }
+    for (const match of state.matches) {
+      for (const result of match.results) {
+        result.ownerId = userIdRedirects.get(result.ownerId) ?? result.ownerId;
+      }
+    }
+    changed = true;
+  }
+  const realUserIds = new Set(state.users.filter(isRealUser).map((user) => user.userId));
+  if (realUserIds.size !== state.users.length) {
+    state.users = state.users.filter((user) => realUserIds.has(user.userId));
+    state.balls = state.balls.filter((ball) => realUserIds.has(ball.ownerId));
+    const keptBallIds = new Set(state.balls.map((ball) => ball.ballId));
+    state.editRecords = Array.isArray(state.editRecords)
+      ? state.editRecords.filter((record) => keptBallIds.has(record.ballId) && realUserIds.has(record.ownerId))
+      : [];
+    state.matches = state.matches.filter((match) =>
+      match.participantBallIds.every((ballId) => keptBallIds.has(ballId)) &&
+      match.results.every((result) => keptBallIds.has(result.ballId) && realUserIds.has(result.ownerId)),
+    );
+    state.autoMatch = {};
+    state.event = {};
+    changed = true;
+  }
   if (!Array.isArray(state.authCodes)) {
     state.authCodes = [];
     changed = true;
   } else {
-    const activeCodes = state.authCodes.filter((record) => Date.parse(record.expiresAt) > now);
+    const activeCodes = state.authCodes.filter((record) => Date.parse(record.expiresAt) > now && !record.email.endsWith("@example.com"));
     if (activeCodes.length !== state.authCodes.length) {
       state.authCodes = activeCodes;
       changed = true;
@@ -735,7 +810,7 @@ function normalizeState(state: PlatformState): PlatformState {
     state.authSessions = [];
     changed = true;
   } else {
-    const activeSessions = state.authSessions.filter((record) => Date.parse(record.expiresAt) > now);
+    const activeSessions = state.authSessions.filter((record) => Date.parse(record.expiresAt) > now && realUserIds.has(record.userId));
     if (activeSessions.length !== state.authSessions.length) {
       state.authSessions = activeSessions;
       changed = true;
@@ -794,6 +869,45 @@ function normalizeState(state: PlatformState): PlatformState {
     changed = true;
   }
   return changed ? { ...state } : state;
+}
+
+function dedupeUsersByEmail(users: PlatformUser[], activeSessionUserIds: Set<string>): Map<string, string> {
+  const canonicalByEmail = new Map<string, PlatformUser>();
+  const redirects = new Map<string, string>();
+  const kept: PlatformUser[] = [];
+  for (const user of users) {
+    const email = user.email?.trim().toLowerCase();
+    if (!email) {
+      kept.push(user);
+      continue;
+    }
+    const existing = canonicalByEmail.get(email);
+    if (!existing) {
+      canonicalByEmail.set(email, user);
+      kept.push(user);
+      continue;
+    }
+    const shouldReplace = activeSessionUserIds.has(user.userId) && !activeSessionUserIds.has(existing.userId);
+    const canonical = shouldReplace ? user : existing;
+    const duplicate = shouldReplace ? existing : user;
+    redirects.set(duplicate.userId, canonical.userId);
+    if (shouldReplace) {
+      canonicalByEmail.set(email, canonical);
+      const index = kept.findIndex((item) => item.userId === existing.userId);
+      if (index >= 0) kept[index] = canonical;
+    }
+    if (!canonical.displayName || canonical.displayName === "新用户") canonical.displayName = duplicate.displayName;
+    canonical.createdAt = new Date(Math.min(Date.parse(canonical.createdAt), Date.parse(duplicate.createdAt))).toISOString();
+    canonical.lastLoginAt = laterDate(canonical.lastLoginAt, duplicate.lastLoginAt);
+  }
+  if (redirects.size > 0) users.splice(0, users.length, ...kept);
+  return redirects;
+}
+
+function laterDate(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return Date.parse(a) >= Date.parse(b) ? a : b;
 }
 
 function makeEditRecord(

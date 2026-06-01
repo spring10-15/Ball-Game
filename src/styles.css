@@ -1137,7 +1137,7 @@ input[type="range"] {
 
 .rule-grid,
 .form-stack,
-.match-list {
+.match-card-list {
   display: grid;
   gap: 10px;
 }
@@ -1609,19 +1609,76 @@ input[type="range"] {
   color: #134e4a;
 }
 
-.match-row {
+.event-activity {
   display: grid;
-  grid-template-columns: 92px 110px 80px minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 0.9fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
+}
+
+.event-kicker {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.event-activity h2 {
+  margin-top: 4px;
+  font-size: 20px;
+}
+
+.event-activity p {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.event-activity-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.event-activity button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #0f172a;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.event-activity button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.match-card {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #ffffff;
-  padding: 10px 12px;
+  padding: 12px;
 }
 
-.match-row span,
-.match-row b {
+.match-card-head {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(140px, 1fr) minmax(160px, 1.1fr);
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.match-card-head span,
+.match-card-head b {
   overflow: hidden;
   color: #64748b;
   font-size: 12px;
@@ -1630,11 +1687,51 @@ input[type="range"] {
   white-space: nowrap;
 }
 
-.match-row strong {
+.match-card-head strong {
   overflow: hidden;
   color: #0f172a;
   font-size: 13px;
   font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-result-list {
+  display: grid;
+  gap: 8px;
+}
+
+.match-result-list button {
+  display: grid;
+  grid-template-columns: 44px minmax(120px, 1fr) minmax(100px, 0.7fr) 82px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.match-result-list span,
+.match-result-list em,
+.match-result-list b {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-result-list strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1859,7 +1956,10 @@ input[type="range"] {
   }
 
   .readonly-grid,
-  .match-row,
+  .match-card-head,
+  .match-result-list button,
+  .event-activity,
+  .event-activity-meta,
   .ball-battle-row,
   .edit-log-row,
   .ranking-row {
