@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import type { Replay } from "./types.js";
 import {
   createInitialPlatformState,
   ensureAutoMatchInState,
@@ -17,6 +18,7 @@ const DEFAULT_STATE_KEY = "agentball:platform-state";
 const LOCK_SUFFIX = ":lock";
 const LOCK_SECONDS = 8;
 const LOCK_RETRIES = 24;
+const REPLAY_DIR = "platform-replays";
 
 interface RedisConfig {
   url: string;
@@ -49,6 +51,26 @@ export async function readPlatformStateFromStore(): Promise<PlatformState> {
     return parseState(raw);
   }
   return readLocalState();
+}
+
+export async function savePlatformReplayToStore(replay: Replay): Promise<void> {
+  const mode = storageMode();
+  if (mode === "redis") {
+    const config = redisConfig();
+    await redisCommand(config, ["SET", replayKey(config.key, replay.matchId), JSON.stringify(replay)]);
+    return;
+  }
+  writeLocalReplay(replay);
+}
+
+export async function readPlatformReplayFromStore(matchId: string): Promise<Replay | null> {
+  const mode = storageMode();
+  if (mode === "redis") {
+    const config = redisConfig();
+    const raw = await redisCommand<string | null>(config, ["GET", replayKey(config.key, matchId)]);
+    return raw ? JSON.parse(raw) as Replay : null;
+  }
+  return readLocalReplay(matchId);
 }
 
 async function mutateRedisState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {
@@ -146,6 +168,20 @@ function writeLocalState(state: PlatformState): void {
   writeFileSync(file, JSON.stringify(normalizePlatformState(state), null, 2));
 }
 
+function writeLocalReplay(replay: Replay): void {
+  const file = localReplayFile(replay.matchId);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(replay));
+}
+
+function readLocalReplay(matchId: string): Replay | null {
+  try {
+    return JSON.parse(readFileSync(localReplayFile(matchId), "utf8")) as Replay;
+  } catch {
+    return null;
+  }
+}
+
 function parseState(raw: string): PlatformState {
   const parsed = JSON.parse(raw) as PlatformState;
   if (parsed.schemaVersion !== 1) throw new Error("平台状态版本不受支持");
@@ -154,6 +190,15 @@ function parseState(raw: string): PlatformState {
 
 function localStateFile(): string {
   return path.join(process.cwd(), "data", "platform-state.json");
+}
+
+function localReplayFile(matchId: string): string {
+  const safeMatchId = matchId.replace(/[^a-zA-Z0-9_-]/g, "");
+  return path.join(process.cwd(), "data", REPLAY_DIR, `${safeMatchId}.json`);
+}
+
+function replayKey(stateKey: string, matchId: string): string {
+  return `${stateKey}:replay:${matchId}`;
 }
 
 function delay(ms: number): Promise<void> {

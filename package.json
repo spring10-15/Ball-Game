@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "sim": "tsx core/run-sim.ts",
     "eval": "tsx core/evaluate.ts",
+    "event-worker": "tsx scripts/event-worker.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

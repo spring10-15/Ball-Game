@@ -28,6 +28,7 @@ import {
   createPlatformBall,
   joinPlatformEvent,
   loadPlatformSnapshot,
+  loadPlatformReplay,
   loadCurrentUser,
   logoutCurrentUser,
   ownedBallCount,
@@ -318,9 +319,30 @@ export function App() {
     try {
       const result = await joinPlatformEvent();
       setPlatform(result.snapshot);
-      setReplay(result.replay);
+      if (result.replay) {
+        setReplay(result.replay);
+        setFrameIndex(0);
+        setSelectedAgentId(result.replay.results[0]?.agentId ?? null);
+        setIsPlaying(true);
+        setArenaEntryTab("replay");
+      } else {
+        setArenaEntryTab("matches");
+      }
+      setView("arena");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function openMatchReplayFromUi(matchId: string) {
+    setOperation("replay");
+    try {
+      const nextReplay = await loadPlatformReplay(matchId);
+      setReplay(nextReplay);
       setFrameIndex(0);
-      setSelectedAgentId(result.replay.results[0]?.agentId ?? null);
+      setSelectedAgentId(nextReplay.results[0]?.agentId ?? null);
       setIsPlaying(true);
       setArenaEntryTab("replay");
       setView("arena");
@@ -406,6 +428,7 @@ export function App() {
           onSelectAgent={setSelectedAgentId}
           onSelectBall={setSelectedPlatformBallId}
           onJoinEvent={joinEventFromUi}
+          onOpenMatchReplay={openMatchReplayFromUi}
           onSpeedChange={setSpeed}
           operation={operation}
           platform={platform}
@@ -566,6 +589,7 @@ function ArenaView(props: ReplayViewProps & {
   entryTab: ArenaTabKey;
   operation: string | null;
   onJoinEvent: () => void;
+  onOpenMatchReplay: (matchId: string) => void;
   onSelectBall: (ballId: string) => void;
 }) {
   const [tab, setTab] = useState<ArenaTabKey>("matches");
@@ -595,7 +619,12 @@ function ArenaView(props: ReplayViewProps & {
             platform={props.platform}
             onJoinEvent={props.onJoinEvent}
           />
-          <MatchRecordsView platform={props.platform} onSelectBall={props.onSelectBall} />
+          <MatchRecordsView
+            operation={props.operation}
+            platform={props.platform}
+            onOpenMatchReplay={props.onOpenMatchReplay}
+            onSelectBall={props.onSelectBall}
+          />
         </>
       )}
       {tab === "leaderboard" && <LeaderboardView platform={props.platform} onSelectBall={props.onSelectBall} />}
@@ -1302,35 +1331,74 @@ function EventActivityView({
   onJoinEvent: () => void;
 }) {
   const myBallCount = platform.balls.filter((ball) => ball.ownerId === currentUser.userId).length;
-  const canJoin = myBallCount > 0 && platform.users.length >= platform.event.minUsers;
+  const joined = platform.event.participantUserIds.includes(currentUser.userId);
+  const canJoin = myBallCount > 0;
   const latestEvent = platform.matches.find((match) => match.source === "event");
+  const statusText = platform.event.status === "active" ? "进行中" : platform.event.status === "finished" ? "已结束" : "未开始";
   return (
     <section className="wide-grid">
       <div className="content-panel span-12 event-activity">
         <div>
           <span className="event-kicker">{platform.event.label}</span>
-          <h2>参加赛事，立即开战</h2>
-          <p>{platform.event.minUsers} 位真实用户即可开赛；系统会为每位用户选 1 个已部署球球参赛。</p>
+          <h2>24 小时连续赛事</h2>
+          <p>报名后进入赛事小组；后台 Worker 会持续开局，第一局结束后继续下一局，直到 24 小时结束。</p>
         </div>
         <div className="event-activity-meta">
-          <MetricMini label="当前用户" value={`${platform.users.length} 位`} />
+          <MetricMini label="赛事状态" value={statusText} />
+          <MetricMini label="参赛球球" value={`${platform.event.participantBallIds.length} 个`} />
+          <MetricMini label="已开局" value={`${platform.event.roundCount} 局`} />
           <MetricMini label="我的球球" value={`${myBallCount} 个`} />
           <MetricMini label="最近赛事" value={latestEvent ? formatDate(latestEvent.createdAt) : "暂无"} />
+          <MetricMini label="结束时间" value={platform.event.endsAt ? formatDate(platform.event.endsAt) : "待开始"} />
         </div>
         <button disabled={!canJoin || operation === "event"} onClick={onJoinEvent} type="button">
           <Play size={16} />
-          {operation === "event" ? "赛事开局中" : "参加赛事"}
+          {operation === "event" ? "报名中" : joined ? "已参加赛事" : "参加赛事"}
         </button>
       </div>
+      {platform.event.standings.length > 0 && (
+        <div className="content-panel span-12">
+          <div className="section-heading">
+            <h2>赛事总榜</h2>
+            <span>{platform.event.roundCount} 局累计</span>
+          </div>
+          <div className="ranking-table event-standings-table">
+            <div className="ranking-row ranking-head">
+              <span>名次</span>
+              <span>球球</span>
+              <span>用户</span>
+              <span>总分</span>
+              <span>胜场</span>
+              <span>均名</span>
+              <span>吞噬</span>
+            </div>
+            {platform.event.standings.map((row, index) => (
+              <div className="ranking-row" key={row.ballId}>
+                <span>{index + 1}</span>
+                <strong>{row.ballName}</strong>
+                <span>{row.ownerName}</span>
+                <b>{formatNumber(row.score)}</b>
+                <span>{row.wins}</span>
+                <span>{row.matches ? formatNumber(row.avgRank, 2) : "暂无"}</span>
+                <span>{row.kills}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
 function MatchRecordsView({
+  operation,
   platform,
+  onOpenMatchReplay,
   onSelectBall,
 }: {
+  operation: string | null;
   platform: PlatformSnapshot;
+  onOpenMatchReplay: (matchId: string) => void;
   onSelectBall: (ballId: string) => void;
 }) {
   return (
@@ -1345,9 +1413,18 @@ function MatchRecordsView({
             {platform.matches.map((match) => (
               <article className="match-card" key={match.matchId}>
                 <div className="match-card-head">
-                  <span>{match.eventName ?? (match.source === "auto" ? "自动赛" : "平台对局")}</span>
+                  <span>{match.roundIndex ? `第 ${match.roundIndex} 局` : match.eventName ?? (match.source === "auto" ? "自动赛" : "平台对局")}</span>
                   <strong>{formatDate(match.createdAt)}</strong>
                   <b>胜者 {winnerName(platform, match.winnerBallId)}</b>
+                  <button
+                    disabled={operation === "replay" || !(match.source === "event" && match.eventId)}
+                    onClick={() => onOpenMatchReplay(match.matchId)}
+                    title={match.source === "event" && match.eventId ? "观看这局完整回放" : "这条旧记录没有独立回放"}
+                    type="button"
+                  >
+                    <Eye size={15} />
+                    观看本局
+                  </button>
                 </div>
                 <div className="match-result-list">
                   {match.results.map((result) => (

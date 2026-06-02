@@ -9,6 +9,10 @@
       "destination": "/api/platform/action?route=matches"
     },
     {
+      "source": "/api/platform/replays/:matchId",
+      "destination": "/api/platform/action?route=replay&matchId=:matchId"
+    },
+    {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }

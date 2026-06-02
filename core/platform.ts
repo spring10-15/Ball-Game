@@ -58,6 +58,13 @@ export interface AutoMatchState {
 }
 
 export interface PlatformEventState {
+  eventId?: string;
+  status?: "idle" | "active" | "finished";
+  startsAt?: string;
+  endsAt?: string;
+  participantUserIds?: string[];
+  participantBallIds?: string[];
+  roundCount?: number;
   lastRunAt?: string;
   lastMatchId?: string;
 }
@@ -106,9 +113,13 @@ export interface PlatformBattleResult {
 export interface PlatformMatchRecord {
   matchId: string;
   source?: "auto" | "event";
+  eventId?: string;
   eventName?: string;
+  roundIndex?: number;
   seed: number;
   createdAt: string;
+  startedAt?: string;
+  endedAt?: string;
   durationSeconds: number;
   participantBallIds: string[];
   winnerBallId?: string;
@@ -196,8 +207,26 @@ export interface PlatformSnapshot {
   event: {
     label: string;
     minUsers: number;
+    status?: "idle" | "active" | "finished";
+    eventId?: string;
+    startsAt?: string;
+    endsAt?: string;
+    participantUserIds: string[];
+    participantBallIds: string[];
+    roundCount: number;
     lastRunAt?: string;
     lastMatchId?: string;
+    standings: Array<{
+      ballId: string;
+      ballName: string;
+      ownerName: string;
+      score: number;
+      matches: number;
+      wins: number;
+      avgRank: number;
+      kills: number;
+      foodPickedMass: number;
+    }>;
   };
 }
 
@@ -227,6 +256,7 @@ export const AUTO_MATCH_COOLDOWN_SECONDS = 300;
 const AUTO_MATCH_DURATION_SECONDS = 60;
 export const EVENT_MATCH_MIN_USERS = 2;
 const EVENT_MATCH_DURATION_SECONDS = 60;
+export const EVENT_DURATION_HOURS = 24;
 const EVENT_MATCH_LABEL = "球球公开赛";
 
 export interface AgentTuneInput {
@@ -368,22 +398,48 @@ export function runPlatformBattle(
 export function runPlatformEventInState(
   state: PlatformState,
   userId: string,
-  seed = Math.floor(Date.now() % 100000),
-): { snapshot: PlatformSnapshot; replay: Replay; match: PlatformMatchRecord } {
-  const selectedBalls = selectEventBalls(state, userId);
+  now = new Date(),
+): { snapshot: PlatformSnapshot; event: PlatformEventState } {
+  const ball = selectUserEventBall(state, userId);
+  const event = ensureActivePlatformEvent(state, now);
+  event.participantUserIds = unique([...(event.participantUserIds ?? []), userId]);
+  event.participantBallIds = unique([...(event.participantBallIds ?? []), ball.ballId]);
+  return { snapshot: snapshotFromPlatformState(state), event };
+}
+
+export function runNextPlatformEventRoundInState(
+  state: PlatformState,
+  now = new Date(),
+): { snapshot: PlatformSnapshot; replay: Replay; match: PlatformMatchRecord } | null {
+  const event = state.event;
+  if (!event?.eventId || event.status !== "active") return null;
+  if (event.endsAt && Date.parse(event.endsAt) <= now.getTime()) {
+    event.status = "finished";
+    return null;
+  }
+  const participantBallIds = event.participantBallIds ?? [];
+  const balls = participantBallIds
+    .map((ballId) => state.balls.find((ball) => ball.ballId === ballId))
+    .filter((ball): ball is PlatformBall => Boolean(ball && ball.status === "deployed"));
+  if (balls.length < EVENT_MATCH_MIN_USERS) return null;
+
+  const roundIndex = (event.roundCount ?? 0) + 1;
   const result = runPlatformBattleInState(state, {
-    seed,
+    seed: Math.floor((now.getTime() + roundIndex) % 100000000),
     durationSeconds: EVENT_MATCH_DURATION_SECONDS,
-    ballIds: selectedBalls.map((ball) => ball.ballId),
+    ballIds: balls.slice(0, 8).map((ball) => ball.ballId),
   }, {
     source: "event",
+    eventId: event.eventId,
     eventName: EVENT_MATCH_LABEL,
+    roundIndex,
+    startedAt: now.toISOString(),
+    endedAt: new Date(now.getTime() + EVENT_MATCH_DURATION_SECONDS * 1000).toISOString(),
   });
-  state.event = {
-    lastRunAt: result.match.createdAt,
-    lastMatchId: result.match.matchId,
-  };
-  return result;
+  event.roundCount = roundIndex;
+  event.lastRunAt = result.match.createdAt;
+  event.lastMatchId = result.match.matchId;
+  return { ...result, snapshot: snapshotFromPlatformState(state) };
 }
 
 export function createInitialPlatformState(): PlatformState {
@@ -487,6 +543,9 @@ export function updateBallAppearanceInState(state: PlatformState, input: UpdateA
 export function deleteUserBallInState(state: PlatformState, ballId: string): PlatformSnapshot {
   mustFindBall(state, ballId);
   state.balls = state.balls.filter((ball) => ball.ballId !== ballId);
+  if (state.event?.participantBallIds) {
+    state.event.participantBallIds = state.event.participantBallIds.filter((id) => id !== ballId);
+  }
   state.editRecords = state.editRecords.filter((record) => record.ballId !== ballId);
   state.matches = state.matches
     .map((match) => ({
@@ -528,7 +587,7 @@ export function agentTuneBallInState(state: PlatformState, input: AgentTuneInput
 export function runPlatformBattleInState(
   state: PlatformState,
   input: RunPlatformBattleInput,
-  metadata: Pick<PlatformMatchRecord, "source" | "eventName"> = {},
+  metadata: Partial<Pick<PlatformMatchRecord, "source" | "eventId" | "eventName" | "roundIndex" | "startedAt" | "endedAt">> = {},
 ): { snapshot: PlatformSnapshot; replay: Replay; match: PlatformMatchRecord } {
   const selectedBalls = selectBattleBalls(state, input.ballIds);
   if (selectedBalls.length < 2) {
@@ -568,6 +627,7 @@ function makeInitialState(): PlatformState {
 function snapshotFromState(state: PlatformState): PlatformSnapshot {
   const usersById = new Map(state.users.map((user) => [user.userId, user]));
   const records = computeRecords(state);
+  const eventStandings = computeEventStandings(state, usersById);
   const leaderboard = state.balls
     .map((ball) => {
       const record = records.get(ball.ballId) ?? emptyRecord();
@@ -617,8 +677,16 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
     event: {
       label: EVENT_MATCH_LABEL,
       minUsers: EVENT_MATCH_MIN_USERS,
+      status: state.event?.status ?? "idle",
+      eventId: state.event?.eventId,
+      startsAt: state.event?.startsAt,
+      endsAt: state.event?.endsAt,
+      participantUserIds: state.event?.participantUserIds ?? [],
+      participantBallIds: state.event?.participantBallIds ?? [],
+      roundCount: state.event?.roundCount ?? 0,
       lastRunAt: state.event?.lastRunAt,
       lastMatchId: state.event?.lastMatchId,
+      standings: eventStandings,
     },
   };
 }
@@ -653,6 +721,62 @@ function computeRecords(state: PlatformState): Map<string, BallRecord> {
     record.avgRank = record.matches === 0 ? 0 : round(record.avgRank / record.matches);
   }
   return records;
+}
+
+function computeEventStandings(
+  state: PlatformState,
+  usersById: Map<string, PlatformUser>,
+): PlatformSnapshot["event"]["standings"] {
+  const eventId = state.event?.eventId;
+  const rows = new Map<string, {
+    ballId: string;
+    ballName: string;
+    ownerName: string;
+    score: number;
+    matches: number;
+    wins: number;
+    rankTotal: number;
+    kills: number;
+    foodPickedMass: number;
+  }>();
+  for (const match of state.matches) {
+    if (match.source !== "event") continue;
+    if (eventId && match.eventId !== eventId) continue;
+    for (const result of match.results) {
+      const ball = state.balls.find((item) => item.ballId === result.ballId);
+      const row = rows.get(result.ballId) ?? {
+        ballId: result.ballId,
+        ballName: result.ballName,
+        ownerName: usersById.get(ball?.ownerId ?? result.ownerId)?.displayName ?? result.ownerName,
+        score: 0,
+        matches: 0,
+        wins: 0,
+        rankTotal: 0,
+        kills: 0,
+        foodPickedMass: 0,
+      };
+      row.score += result.score;
+      row.matches += 1;
+      row.wins += result.rank === 1 ? 1 : 0;
+      row.rankTotal += result.rank;
+      row.kills += result.kills;
+      row.foodPickedMass += result.foodPickedMass;
+      rows.set(result.ballId, row);
+    }
+  }
+  return [...rows.values()]
+    .map((row) => ({
+      ballId: row.ballId,
+      ballName: row.ballName,
+      ownerName: row.ownerName,
+      score: round(row.score),
+      matches: row.matches,
+      wins: row.wins,
+      avgRank: row.matches ? round(row.rankTotal / row.matches) : 0,
+      kills: row.kills,
+      foodPickedMass: round(row.foodPickedMass),
+    }))
+    .sort((a, b) => b.wins - a.wins || b.score - a.score || a.avgRank - b.avgRank);
 }
 
 function emptyRecord(): BallRecord {
@@ -734,6 +858,35 @@ function selectEventBalls(state: PlatformState, actorUserId: string): PlatformBa
     .slice(0, 8);
 }
 
+function selectUserEventBall(state: PlatformState, userId: string): PlatformBall {
+  const user = state.users.find((item) => item.userId === userId);
+  if (!user || !isRealUser(user)) throw new Error("只有真实登录用户可以参加赛事");
+  const ball = state.balls
+    .filter((item) => item.ownerId === userId && item.status === "deployed")
+    .sort((a, b) => Date.parse(b.deployedAt ?? b.createdAt) - Date.parse(a.deployedAt ?? a.createdAt))[0];
+  if (!ball) throw new Error("你需要先创建一个球球才能参加赛事");
+  return ball;
+}
+
+function ensureActivePlatformEvent(state: PlatformState, now: Date): PlatformEventState {
+  const existing = state.event;
+  if (existing?.eventId && existing.status === "active" && (!existing.endsAt || Date.parse(existing.endsAt) > now.getTime())) {
+    return existing;
+  }
+  const startsAt = now.toISOString();
+  const endsAt = new Date(now.getTime() + EVENT_DURATION_HOURS * 60 * 60 * 1000).toISOString();
+  state.event = {
+    eventId: `event_${now.getTime().toString(36)}`,
+    status: "active",
+    startsAt,
+    endsAt,
+    participantUserIds: [],
+    participantBallIds: [],
+    roundCount: 0,
+  };
+  return state.event;
+}
+
 function isRealUser(user: PlatformUser): boolean {
   return Boolean(user.email && !user.email.endsWith("@example.com"));
 }
@@ -760,6 +913,18 @@ function normalizeState(state: PlatformState): PlatformState {
   }
   if (!state.event) {
     state.event = {};
+    changed = true;
+  }
+  if (!Array.isArray(state.event.participantUserIds)) {
+    state.event.participantUserIds = [];
+    changed = true;
+  }
+  if (!Array.isArray(state.event.participantBallIds)) {
+    state.event.participantBallIds = [];
+    changed = true;
+  }
+  if (typeof state.event.roundCount !== "number") {
+    state.event.roundCount = 0;
     changed = true;
   }
   const activeSessionUserIds = new Set(Array.isArray(state.authSessions) ? state.authSessions.map((session) => session.userId) : []);
@@ -793,7 +958,11 @@ function normalizeState(state: PlatformState): PlatformState {
       match.results.every((result) => keptBallIds.has(result.ballId) && realUserIds.has(result.ownerId)),
     );
     state.autoMatch = {};
-    state.event = {};
+    state.event = {
+      participantUserIds: [],
+      participantBallIds: [],
+      roundCount: 0,
+    };
     changed = true;
   }
   if (!Array.isArray(state.authCodes)) {
@@ -850,6 +1019,9 @@ function normalizeState(state: PlatformState): PlatformState {
   });
   if (cappedBalls.length !== state.balls.length) {
     state.balls = cappedBalls;
+    if (state.event?.participantBallIds) {
+      state.event.participantBallIds = state.event.participantBallIds.filter((ballId) => keptBallIds.has(ballId));
+    }
     state.editRecords = state.editRecords.filter((record) => keptBallIds.has(record.ballId));
     state.matches = state.matches
       .map((match) => ({
@@ -962,7 +1134,7 @@ function buildMatchRecord(
     durationSeconds,
     participantBallIds: balls.map((ball) => ball.ballId),
     winnerBallId: results[0]?.ballId,
-    replayFile: "last-replay.json",
+    replayFile: `/api/platform/replays/${replay.matchId}`,
     results,
   };
 }
@@ -1312,6 +1484,10 @@ function cleanIdentifier(value: string | undefined): string | undefined {
   const clean = typeof value === "string" ? value.trim() : "";
   if (!/^[a-zA-Z0-9_-]{6,48}$/.test(clean)) return undefined;
   return clean;
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function normalizeEmail(value: string): string {

@@ -74,9 +74,13 @@ export interface PlatformBattleResult {
 export interface PlatformMatchRecord {
   matchId: string;
   source?: "auto" | "event";
+  eventId?: string;
   eventName?: string;
+  roundIndex?: number;
   seed: number;
   createdAt: string;
+  startedAt?: string;
+  endedAt?: string;
   durationSeconds: number;
   participantBallIds: string[];
   winnerBallId?: string;
@@ -134,15 +138,34 @@ export interface PlatformSnapshot {
   event: {
     label: string;
     minUsers: number;
+    status?: "idle" | "active" | "finished";
+    eventId?: string;
+    startsAt?: string;
+    endsAt?: string;
+    participantUserIds: string[];
+    participantBallIds: string[];
+    roundCount: number;
     lastRunAt?: string;
     lastMatchId?: string;
+    standings: Array<{
+      ballId: string;
+      ballName: string;
+      ownerName: string;
+      score: number;
+      matches: number;
+      wins: number;
+      avgRank: number;
+      kills: number;
+      foodPickedMass: number;
+    }>;
   };
 }
 
 export interface PlatformRunResponse {
   snapshot: PlatformSnapshot;
-  replay: Replay;
-  match: PlatformMatchRecord;
+  replay?: Replay;
+  match?: PlatformMatchRecord;
+  event?: PlatformSnapshot["event"];
 }
 
 export interface AuthUser {
@@ -214,6 +237,10 @@ export async function joinPlatformEvent(): Promise<PlatformRunResponse> {
   return requestJson<PlatformRunResponse>("/api/platform/events/join", {
     method: "POST",
   });
+}
+
+export async function loadPlatformReplay(matchId: string): Promise<Replay> {
+  return requestJson<Replay>(`/api/platform/replays/${encodeURIComponent(matchId)}`);
 }
 
 export async function uploadAgentBallEdit(input: {

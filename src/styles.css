@@ -1804,7 +1804,7 @@ input[type="range"] {
 
 .match-card-head {
   display: grid;
-  grid-template-columns: minmax(100px, 0.7fr) minmax(140px, 1fr) minmax(160px, 1.1fr);
+  grid-template-columns: minmax(100px, 0.7fr) minmax(140px, 1fr) minmax(160px, 1.1fr) auto;
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
@@ -1827,6 +1827,27 @@ input[type="range"] {
   font-weight: 820;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.match-card-head button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.match-card-head button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .match-result-list {

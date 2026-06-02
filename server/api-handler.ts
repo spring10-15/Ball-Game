@@ -16,7 +16,7 @@ import {
   type AgentProfile,
   type BallAppearance,
 } from "../core/platform.js";
-import { mutatePlatformState, readPlatformSnapshotFromStore } from "../core/platform-storage.js";
+import { mutatePlatformState, readPlatformReplayFromStore, readPlatformSnapshotFromStore } from "../core/platform-storage.js";
 import { runDemoMatch } from "../core/run-sim.js";
 
 interface ApiRequest extends IncomingMessage {
@@ -72,6 +72,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (req.method === "GET" && route === "/platform") {
       sendJson(res, 200, await readPlatformSnapshotFromStore());
+      return;
+    }
+
+    if (req.method === "GET" && route.startsWith("/platform/replays/")) {
+      const matchId = route.split("/").pop() ?? "";
+      const replay = await readPlatformReplayFromStore(matchId);
+      if (!replay) throw new RequestError("没有找到这局回放", 404);
+      sendJson(res, 200, replay);
       return;
     }
 
