@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/platform/events/join",
+      "destination": "/api/platform/action?route=eventJoin"
+    },
+    {
+      "source": "/api/platform/matches",
+      "destination": "/api/platform/action?route=matches"
+    },
+    {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }
