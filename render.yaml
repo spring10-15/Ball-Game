@@ -1,0 +1,22 @@
+services:
+  - type: worker
+    name: agentball-event-worker
+    runtime: node
+    plan: starter
+    branch: main
+    buildCommand: npm ci
+    startCommand: npm run event-worker
+    autoDeploy: true
+    envVars:
+      - key: AGENTBALL_STORAGE_MODE
+        value: redis
+      - key: AGENTBALL_REDIS_KEY
+        value: agentball:platform-state
+      - key: AGENTBALL_EVENT_ROUND_SECONDS
+        value: "60"
+      - key: AGENTBALL_EVENT_IDLE_SECONDS
+        value: "10"
+      - key: KV_REST_API_URL
+        sync: false
+      - key: KV_REST_API_TOKEN
+        sync: false
