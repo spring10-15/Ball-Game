@@ -6,12 +6,12 @@
 npm run event-worker
 ```
 
-它会复用 Vercel 网站正在使用的同一套 Redis/KV 数据：
+它会每分钟调用 Vercel 生产环境里的赛事接口：
 
 - 有进行中的 24 小时赛事
 - 参赛球球数量至少 2 个
 - 每 60 秒自动跑一局
-- 每局结果和完整回放写回 Redis/KV
+- 每局结果和完整回放由 Vercel API 写回 Redis/KV
 
 ## Render Blueprint
 
@@ -33,14 +33,13 @@ plan: starter
 
 ## 必填环境变量
 
-在 Render 创建 Blueprint 时填这两个变量，值要和 Vercel Production 里的 Redis/KV 保持一致：
+在 Render 创建 Blueprint 时填这个变量，值要和 Vercel Production 里的 `CRON_SECRET` 保持一致：
 
 ```bash
-KV_REST_API_URL=...
-KV_REST_API_TOKEN=...
+CRON_SECRET=...
 ```
 
-不要把这两个值写进 GitHub。
+不要把这个值写进 GitHub。
 
 ## 创建步骤
 
@@ -53,7 +52,7 @@ spring10-15/Ball-Game
 ```
 
 4. Render 会识别根目录的 `render.yaml`。
-5. 在环境变量页面填入 `KV_REST_API_URL` 和 `KV_REST_API_TOKEN`。
+5. 在环境变量页面填入 `CRON_SECRET`。
 6. 创建后观察 Logs，看到类似下面日志即为运行成功：
 
 ```text

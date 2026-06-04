@@ -8,15 +8,11 @@ services:
     startCommand: npm run event-worker
     autoDeploy: true
     envVars:
-      - key: AGENTBALL_STORAGE_MODE
-        value: redis
-      - key: AGENTBALL_REDIS_KEY
-        value: agentball:platform-state
+      - key: AGENTBALL_EVENT_ENDPOINT
+        value: https://agenty.cloud/api/cron/event-round
       - key: AGENTBALL_EVENT_ROUND_SECONDS
         value: "60"
       - key: AGENTBALL_EVENT_IDLE_SECONDS
         value: "10"
-      - key: KV_REST_API_URL
-        sync: false
-      - key: KV_REST_API_TOKEN
+      - key: CRON_SECRET
         sync: false
