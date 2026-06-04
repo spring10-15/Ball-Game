@@ -13,6 +13,10 @@
       "destination": "/api/platform/action?route=replay&matchId=:matchId"
     },
     {
+      "source": "/api/cron/event-round",
+      "destination": "/api/platform/action?route=eventRound"
+    },
+    {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }

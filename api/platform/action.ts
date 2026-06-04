@@ -9,5 +9,6 @@ export default function platformAction(req: IncomingMessage, res: ServerResponse
   if (route === "eventJoin") req.url = "/api/platform/events/join";
   if (route === "matches") req.url = "/api/platform/matches";
   if (route === "replay" && matchId) req.url = `/api/platform/replays/${matchId}`;
+  if (route === "eventRound") req.url = "/api/cron/event-round";
   return handler(req, res);
 }

@@ -11,12 +11,18 @@ import { runEvaluation } from "../core/evaluate.js";
 import {
   agentTuneBallInState,
   createUserBallInState,
+  runNextPlatformEventRoundInState,
   runPlatformEventInState,
   updateBallAppearanceInState,
   type AgentProfile,
   type BallAppearance,
 } from "../core/platform.js";
-import { mutatePlatformState, readPlatformReplayFromStore, readPlatformSnapshotFromStore } from "../core/platform-storage.js";
+import {
+  mutatePlatformState,
+  readPlatformReplayFromStore,
+  readPlatformSnapshotFromStore,
+  savePlatformReplayToStore,
+} from "../core/platform-storage.js";
 import { runDemoMatch } from "../core/run-sim.js";
 
 interface ApiRequest extends IncomingMessage {
@@ -72,6 +78,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (req.method === "GET" && route === "/platform") {
       sendJson(res, 200, await readPlatformSnapshotFromStore());
+      return;
+    }
+
+    if (req.method === "GET" && route === "/cron/event-round") {
+      const authError = validateCronAuth(req);
+      if (authError) {
+        sendJson(res, authError.status, { error: authError.message });
+        return;
+      }
+      const result = await mutatePlatformState((state) => runNextPlatformEventRoundInState(state, new Date()));
+      if (!result) {
+        sendJson(res, 200, { ok: true, ran: false });
+        return;
+      }
+      await savePlatformReplayToStore(result.replay);
+      sendJson(res, 200, {
+        ok: true,
+        ran: true,
+        matchId: result.match.matchId,
+        roundIndex: result.match.roundIndex,
+        participantCount: result.match.results.length,
+        winnerBallId: result.match.winnerBallId,
+      });
       return;
     }
 
@@ -246,6 +275,15 @@ function setCommonHeaders(res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", process.env.AGENTBALL_ALLOWED_ORIGIN ?? "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+}
+
+function validateCronAuth(req: ApiRequest): { status: number; message: string } | null {
+  const secret = process.env.CRON_SECRET;
+  const isVercel = process.env.VERCEL === "1";
+  if (!secret) {
+    return isVercel ? { status: 500, message: "生产环境缺少 CRON_SECRET" } : null;
+  }
+  return req.headers.authorization === `Bearer ${secret}` ? null : { status: 401, message: "Unauthorized" };
 }
 
 function statusForError(error: unknown): number {
