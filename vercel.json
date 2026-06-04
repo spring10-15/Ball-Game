@@ -1,10 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/event-round",
-      "schedule": "* * * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/platform/events/join",
