@@ -259,14 +259,15 @@ h2 {
 
 .match-summary {
   display: grid;
-  grid-template-columns: minmax(150px, 1.2fr) repeat(4, minmax(90px, 1fr));
+  grid-template-columns: minmax(220px, 1.45fr) repeat(4, minmax(90px, 1fr));
   gap: 10px;
   min-width: min(720px, 100%);
 }
 
 .user-badge {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
   min-width: 0;
   border: 1px solid #d8e0ea;
@@ -275,21 +276,27 @@ h2 {
   padding: 8px 8px 8px 12px;
 }
 
-.user-badge span,
-.user-badge em {
+.user-badge-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.user-badge-text span,
+.user-badge-text em {
   overflow: hidden;
   min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.user-badge span {
+.user-badge-text span {
   color: #0f172a;
   font-size: 13px;
   font-weight: 800;
 }
 
-.user-badge em {
+.user-badge-text em {
   color: #64748b;
   font-size: 12px;
   font-style: normal;
@@ -297,17 +304,25 @@ h2 {
 }
 
 .user-badge button {
-  grid-column: 2;
-  grid-row: 1 / span 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
+  gap: 6px;
+  min-width: 88px;
   height: 30px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   background: #f8fafc;
   color: #334155;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.user-badge button:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .view-tabs {

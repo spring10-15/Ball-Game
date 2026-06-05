@@ -368,10 +368,13 @@ export function App() {
         </div>
         <div className="match-summary">
           <div className="user-badge">
-            <span>{currentUser.displayName}</span>
-            <em>{currentUser.email}</em>
-            <button onClick={logoutFromUi} type="button" disabled={operation === "logout"} title="退出登录">
+            <div className="user-badge-text">
+              <span>{currentUser.displayName}</span>
+              <em>{currentUser.email}</em>
+            </div>
+            <button onClick={logoutFromUi} type="button" disabled={operation === "logout"} title="退出当前账号并返回登录页">
               <LogOut size={15} />
+              {operation === "logout" ? "退出中" : "切换账号"}
             </button>
           </div>
           <SummaryStat label="球球" value={`${platform?.balls.length ?? 0} 个`} />
