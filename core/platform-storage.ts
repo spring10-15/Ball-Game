@@ -27,10 +27,14 @@ interface RedisConfig {
 }
 
 export async function readPlatformSnapshotFromStore(): Promise<PlatformSnapshot> {
-  return mutatePlatformState((state) => {
-    ensureAutoMatchInState(state);
+  let autoReplay: Replay | null = null;
+  const snapshot = await mutatePlatformState((state) => {
+    const autoMatch = ensureAutoMatchInState(state);
+    if (autoMatch) autoReplay = autoMatch.replay;
     return snapshotFromPlatformState(state);
   });
+  if (autoReplay) await savePlatformReplayToStore(autoReplay);
+  return snapshot;
 }
 
 export async function mutatePlatformState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {

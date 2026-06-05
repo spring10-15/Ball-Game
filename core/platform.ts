@@ -332,7 +332,11 @@ export function savePlatformState(state: PlatformState, outDir = defaultOutDir()
 
 export function getPlatformSnapshot(outDir = defaultOutDir()): PlatformSnapshot {
   const state = loadPlatformState(outDir);
-  if (ensureAutoMatchInState(state)) savePlatformState(state, outDir);
+  const autoMatch = ensureAutoMatchInState(state);
+  if (autoMatch) {
+    savePlatformState(state, outDir);
+    writePlatformReplay(autoMatch.replay, outDir);
+  }
   return snapshotFromPlatformState(state);
 }
 
@@ -454,7 +458,10 @@ export function snapshotFromPlatformState(state: PlatformState): PlatformSnapsho
   return snapshotFromState(state);
 }
 
-export function ensureAutoMatchInState(state: PlatformState, now = new Date()): PlatformMatchRecord | null {
+export function ensureAutoMatchInState(
+  state: PlatformState,
+  now = new Date(),
+): { replay: Replay; match: PlatformMatchRecord } | null {
   const selectedBalls = selectAutoMatchBalls(state);
   if (selectedBalls.length < AUTO_MATCH_MIN_PLAYERS) return null;
 
@@ -468,12 +475,17 @@ export function ensureAutoMatchInState(state: PlatformState, now = new Date()): 
     seed: Math.floor(now.getTime() % 100000),
     durationSeconds: AUTO_MATCH_DURATION_SECONDS,
     ballIds: selectedBalls.map((ball) => ball.ballId),
+  }, {
+    source: "auto",
+    eventName: "自动赛",
+    startedAt: now.toISOString(),
+    endedAt: new Date(now.getTime() + AUTO_MATCH_DURATION_SECONDS * 1000).toISOString(),
   });
   state.autoMatch = {
     lastRunAt: result.match.createdAt,
     lastLineupKey: lineupKey,
   };
-  return result.match;
+  return { replay: result.replay, match: result.match };
 }
 
 export function createUserBallInState(state: PlatformState, input: CreateUserBallInput): PlatformSnapshot {

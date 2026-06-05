@@ -38,6 +38,7 @@ import {
   type BallPattern,
   type AuthUser,
   type PlatformBall,
+  type PlatformMatchRecord,
   type PlatformSnapshot,
   savePlatformAppearance,
   verifyLoginCode,
@@ -134,6 +135,7 @@ export function App() {
           loadedPlatform.balls.find((ball) => ball.ownerId === currentUser.userId)?.ballId ?? loadedPlatform.balls[0]?.ballId ?? null,
         );
         setLoadError(null);
+        loadLatestPlatformReplay(loadedPlatform);
       })
       .catch((error) => {
         setLoadError(error instanceof Error ? error.message : String(error));
@@ -350,6 +352,22 @@ export function App() {
       setLoadError(error instanceof Error ? error.message : String(error));
     } finally {
       setOperation(null);
+    }
+  }
+
+  async function loadLatestPlatformReplay(nextPlatform: PlatformSnapshot) {
+    for (const match of nextPlatform.matches) {
+      if (!canOpenMatchReplay(match)) continue;
+      try {
+        const nextReplay = await loadPlatformReplay(match.matchId);
+        setReplay(nextReplay);
+        setFrameIndex(0);
+        setSelectedAgentId(nextReplay.results[0]?.agentId ?? null);
+        setIsPlaying(false);
+        return;
+      } catch {
+        // 旧记录可能没有独立回放文件，继续尝试下一局。
+      }
     }
   }
 
@@ -1313,6 +1331,10 @@ function winnerName(platform: PlatformSnapshot, ballId: string | undefined): str
   return platform.balls.find((ball) => ball.ballId === ballId)?.name ?? "暂无胜者";
 }
 
+function canOpenMatchReplay(match: PlatformMatchRecord): boolean {
+  return Boolean(match.replayFile?.startsWith("/api/platform/replays/") && (match.source === "auto" || match.eventId));
+}
+
 function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "刚刚";
@@ -1420,9 +1442,9 @@ function MatchRecordsView({
                   <strong>{formatDate(match.createdAt)}</strong>
                   <b>胜者 {winnerName(platform, match.winnerBallId)}</b>
                   <button
-                    disabled={operation === "replay" || !(match.source === "event" && match.eventId)}
+                    disabled={operation === "replay" || !canOpenMatchReplay(match)}
                     onClick={() => onOpenMatchReplay(match.matchId)}
-                    title={match.source === "event" && match.eventId ? "观看这局完整回放" : "这条旧记录没有独立回放"}
+                    title={canOpenMatchReplay(match) ? "观看这局完整回放" : "这条旧记录没有独立回放"}
                     type="button"
                   >
                     <Eye size={15} />
