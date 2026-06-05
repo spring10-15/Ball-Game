@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type { Replay } from "./types.js";
 import {
   createInitialPlatformState,
-  ensureAutoMatchInState,
   normalizePlatformState,
   snapshotFromPlatformState,
   type PlatformSnapshot,
@@ -27,14 +26,7 @@ interface RedisConfig {
 }
 
 export async function readPlatformSnapshotFromStore(): Promise<PlatformSnapshot> {
-  let autoReplay: Replay | null = null;
-  const snapshot = await mutatePlatformState((state) => {
-    const autoMatch = ensureAutoMatchInState(state);
-    if (autoMatch) autoReplay = autoMatch.replay;
-    return snapshotFromPlatformState(state);
-  });
-  if (autoReplay) await savePlatformReplayToStore(autoReplay);
-  return snapshot;
+  return snapshotFromPlatformState(await readPlatformStateFromStore());
 }
 
 export async function mutatePlatformState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {
@@ -75,6 +67,41 @@ export async function readPlatformReplayFromStore(matchId: string): Promise<Repl
     return raw ? JSON.parse(raw) as Replay : null;
   }
   return readLocalReplay(matchId);
+}
+
+export async function cleanupPlatformReplaysFromStore(keepMatchIds: string[]): Promise<{
+  deleted: number;
+  kept: number;
+  scanned: number;
+}> {
+  const keep = new Set(keepMatchIds);
+  const mode = storageMode();
+  if (mode === "redis") {
+    const config = redisConfig();
+    const prefix = replayKeyPrefix(config.key);
+    let cursor = "0";
+    let deleted = 0;
+    let kept = 0;
+    let scanned = 0;
+    do {
+      const result = await redisCommand<[string, string[]]>(config, ["SCAN", cursor, "MATCH", `${prefix}*`, "COUNT", "100"]);
+      cursor = String(result[0] ?? "0");
+      const keys = Array.isArray(result[1]) ? result[1] : [];
+      scanned += keys.length;
+      const staleKeys = keys.filter((key) => {
+        const matchId = key.slice(prefix.length);
+        const shouldKeep = keep.has(matchId);
+        if (shouldKeep) kept += 1;
+        return !shouldKeep;
+      });
+      if (staleKeys.length > 0) {
+        await redisCommand(config, ["DEL", ...staleKeys]);
+        deleted += staleKeys.length;
+      }
+    } while (cursor !== "0");
+    return { deleted, kept, scanned };
+  }
+  return cleanupLocalReplays(keep);
 }
 
 async function mutateRedisState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {
@@ -186,6 +213,29 @@ function readLocalReplay(matchId: string): Replay | null {
   }
 }
 
+function cleanupLocalReplays(keep: Set<string>): { deleted: number; kept: number; scanned: number } {
+  const dir = path.join(process.cwd(), "data", REPLAY_DIR);
+  let deleted = 0;
+  let kept = 0;
+  let scanned = 0;
+  try {
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith(".json")) continue;
+      scanned += 1;
+      const matchId = file.slice(0, -5);
+      if (keep.has(matchId)) {
+        kept += 1;
+        continue;
+      }
+      unlinkSync(path.join(dir, file));
+      deleted += 1;
+    }
+  } catch {
+    return { deleted, kept, scanned };
+  }
+  return { deleted, kept, scanned };
+}
+
 function parseState(raw: string): PlatformState {
   const parsed = JSON.parse(raw) as PlatformState;
   if (parsed.schemaVersion !== 1) throw new Error("平台状态版本不受支持");
@@ -202,7 +252,11 @@ function localReplayFile(matchId: string): string {
 }
 
 function replayKey(stateKey: string, matchId: string): string {
-  return `${stateKey}:replay:${matchId}`;
+  return `${replayKeyPrefix(stateKey)}${matchId}`;
+}
+
+function replayKeyPrefix(stateKey: string): string {
+  return `${stateKey}:replay:`;
 }
 
 function delay(ms: number): Promise<void> {

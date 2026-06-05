@@ -10,5 +10,10 @@ export default function platformAction(req: IncomingMessage, res: ServerResponse
   if (route === "matches") req.url = "/api/platform/matches";
   if (route === "replay" && matchId) req.url = `/api/platform/replays/${matchId}`;
   if (route === "eventRound") req.url = "/api/cron/event-round";
+  if (route === "cleanupReplays") {
+    url.searchParams.delete("route");
+    const query = url.searchParams.toString();
+    req.url = `/api/cron/cleanup-replays${query ? `?${query}` : ""}`;
+  }
   return handler(req, res);
 }

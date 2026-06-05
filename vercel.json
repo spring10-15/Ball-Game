@@ -17,6 +17,10 @@
       "destination": "/api/platform/action?route=eventRound"
     },
     {
+      "source": "/api/cron/cleanup-replays",
+      "destination": "/api/platform/action?route=cleanupReplays"
+    },
+    {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }

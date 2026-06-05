@@ -18,8 +18,10 @@ import {
   type BallAppearance,
 } from "../core/platform.js";
 import {
+  cleanupPlatformReplaysFromStore,
   mutatePlatformState,
   readPlatformReplayFromStore,
+  readPlatformStateFromStore,
   readPlatformSnapshotFromStore,
   savePlatformReplayToStore,
 } from "../core/platform-storage.js";
@@ -48,7 +50,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   try {
-    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const pathname = url.pathname;
     const route = pathname.replace(/^\/api/, "") || "/";
 
     if (req.method === "GET" && route === "/auth/me") {
@@ -92,6 +95,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         sendJson(res, 200, { ok: true, ran: false });
         return;
       }
+      await cleanupPlatformReplaysFromStore(result.snapshot.matches.slice(0, 12).map((match) => match.matchId));
       await savePlatformReplayToStore(result.replay);
       sendJson(res, 200, {
         ok: true,
@@ -101,6 +105,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         participantCount: result.match.results.length,
         winnerBallId: result.match.winnerBallId,
       });
+      return;
+    }
+
+    if (req.method === "GET" && route === "/cron/cleanup-replays") {
+      const authError = validateCronAuth(req);
+      if (authError) {
+        sendJson(res, authError.status, { error: authError.message });
+        return;
+      }
+      const keepCount = optionalPositiveInt(url.searchParams.get("keep"), "keep", 80) ?? 12;
+      const state = await readPlatformStateFromStore();
+      const keepMatchIds = state.matches.slice(0, keepCount).map((match) => match.matchId);
+      const cleanup = await cleanupPlatformReplaysFromStore(keepMatchIds);
+      sendJson(res, 200, { ok: true, keepCount, keepMatchIds, cleanup });
       return;
     }
 
