@@ -95,7 +95,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         sendJson(res, 200, { ok: true, ran: false });
         return;
       }
-      await cleanupPlatformReplaysFromStore(result.snapshot.matches.slice(0, 12).map((match) => match.matchId));
+      await cleanupPlatformReplaysFromStore({
+        keepMatchIds: result.snapshot.matches.slice(0, 12).map((match) => match.matchId),
+        count: 80,
+        limit: 80,
+      });
       await savePlatformReplayToStore(result.replay);
       sendJson(res, 200, {
         ok: true,
@@ -115,9 +119,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         return;
       }
       const keepCount = optionalPositiveInt(url.searchParams.get("keep"), "keep", 80) ?? 12;
+      const cursor = url.searchParams.get("cursor") ?? "0";
+      const count = optionalPositiveInt(url.searchParams.get("count"), "count", 200) ?? 50;
+      const limit = optionalPositiveInt(url.searchParams.get("limit"), "limit", 200) ?? 50;
       const state = await readPlatformStateFromStore();
       const keepMatchIds = state.matches.slice(0, keepCount).map((match) => match.matchId);
-      const cleanup = await cleanupPlatformReplaysFromStore(keepMatchIds);
+      const cleanup = await cleanupPlatformReplaysFromStore({ keepMatchIds, cursor, count, limit });
       sendJson(res, 200, { ok: true, keepCount, keepMatchIds, cleanup });
       return;
     }

@@ -69,22 +69,31 @@ export async function readPlatformReplayFromStore(matchId: string): Promise<Repl
   return readLocalReplay(matchId);
 }
 
-export async function cleanupPlatformReplaysFromStore(keepMatchIds: string[]): Promise<{
+export async function cleanupPlatformReplaysFromStore(options: {
+  keepMatchIds: string[];
+  cursor?: string;
+  count?: number;
+  limit?: number;
+}): Promise<{
   deleted: number;
   kept: number;
   scanned: number;
+  cursor: string;
+  done: boolean;
 }> {
-  const keep = new Set(keepMatchIds);
+  const keep = new Set(options.keepMatchIds);
   const mode = storageMode();
   if (mode === "redis") {
     const config = redisConfig();
     const prefix = replayKeyPrefix(config.key);
-    let cursor = "0";
+    const count = Math.max(1, Math.min(Math.floor(options.count ?? 50), 200));
+    const limit = Math.max(1, Math.min(Math.floor(options.limit ?? 50), 200));
+    let cursor = options.cursor ?? "0";
     let deleted = 0;
     let kept = 0;
     let scanned = 0;
     do {
-      const result = await redisCommand<[string, string[]]>(config, ["SCAN", cursor, "MATCH", `${prefix}*`, "COUNT", "100"]);
+      const result = await redisCommand<[string, string[]]>(config, ["SCAN", cursor, "MATCH", `${prefix}*`, "COUNT", String(count)]);
       cursor = String(result[0] ?? "0");
       const keys = Array.isArray(result[1]) ? result[1] : [];
       scanned += keys.length;
@@ -95,13 +104,15 @@ export async function cleanupPlatformReplaysFromStore(keepMatchIds: string[]): P
         return !shouldKeep;
       });
       if (staleKeys.length > 0) {
-        await redisCommand(config, ["DEL", ...staleKeys]);
-        deleted += staleKeys.length;
+        const batch = staleKeys.slice(0, limit - deleted);
+        await redisCommand(config, ["DEL", ...batch]);
+        deleted += batch.length;
       }
-    } while (cursor !== "0");
-    return { deleted, kept, scanned };
+    } while (cursor !== "0" && deleted < limit);
+    return { deleted, kept, scanned, cursor, done: cursor === "0" };
   }
-  return cleanupLocalReplays(keep);
+  const cleanup = cleanupLocalReplays(keep);
+  return { ...cleanup, cursor: "0", done: true };
 }
 
 async function mutateRedisState<T>(mutator: (state: PlatformState) => T | Promise<T>): Promise<T> {
