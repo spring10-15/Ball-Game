@@ -453,10 +453,10 @@ export function runPlatformEventInState(
   userId: string,
   now = new Date(),
 ): { snapshot: PlatformSnapshot; event: PlatformEventState } {
-  const ball = selectUserEventBall(state, userId);
+  const balls = selectEventBalls(state, userId);
   const event = ensureActivePlatformEvent(state, now);
-  event.participantUserIds = unique([...(event.participantUserIds ?? []), userId]);
-  event.participantBallIds = unique([...(event.participantBallIds ?? []), ball.ballId]);
+  event.participantUserIds = unique([...(event.participantUserIds ?? []), ...balls.map((ball) => ball.ownerId)]);
+  event.participantBallIds = unique([...(event.participantBallIds ?? []), ...balls.map((ball) => ball.ballId)]);
   return { snapshot: snapshotFromPlatformState(state), event };
 }
 
@@ -470,7 +470,7 @@ export function runNextPlatformEventRoundInState(
     event.status = "finished";
     return null;
   }
-  const participantBallIds = event.participantBallIds ?? [];
+  const participantBallIds = ensureEventParticipantBallIds(state, event);
   const balls = participantBallIds
     .map((ballId) => state.balls.find((ball) => ball.ballId === ballId))
     .filter((ball): ball is PlatformBall => Boolean(ball && ball.status === "deployed"));
@@ -985,14 +985,30 @@ function selectEventBalls(state: PlatformState, actorUserId: string): PlatformBa
     .slice(0, 8);
 }
 
-function selectUserEventBall(state: PlatformState, userId: string): PlatformBall {
-  const user = state.users.find((item) => item.userId === userId);
-  if (!user || !isRealUser(user)) throw new Error("只有真实登录用户可以参加赛事");
-  const ball = state.balls
-    .filter((item) => item.ownerId === userId && item.status === "deployed")
-    .sort((a, b) => Date.parse(b.deployedAt ?? b.createdAt) - Date.parse(a.deployedAt ?? a.createdAt))[0];
-  if (!ball) throw new Error("你需要先创建一个球球才能参加赛事");
-  return ball;
+function ensureEventParticipantBallIds(state: PlatformState, event: PlatformEventState): string[] {
+  const currentBallIds = event.participantBallIds ?? [];
+  if (currentBallIds.length >= EVENT_MATCH_MIN_USERS) return currentBallIds;
+
+  const balls = selectEligibleEventBalls(state);
+  if (balls.length < EVENT_MATCH_MIN_USERS) return currentBallIds;
+  event.participantUserIds = unique([...(event.participantUserIds ?? []), ...balls.map((ball) => ball.ownerId)]);
+  event.participantBallIds = unique([...currentBallIds, ...balls.map((ball) => ball.ballId)]).slice(0, 8);
+  return event.participantBallIds;
+}
+
+function selectEligibleEventBalls(state: PlatformState): PlatformBall[] {
+  const realUserIds = new Set(state.users.filter(isRealUser).map((user) => user.userId));
+  const ballsByOwner = new Map<string, PlatformBall>();
+  for (const ball of state.balls) {
+    if (ball.status !== "deployed" || !realUserIds.has(ball.ownerId)) continue;
+    const current = ballsByOwner.get(ball.ownerId);
+    if (!current || Date.parse(ball.deployedAt ?? ball.createdAt) > Date.parse(current.deployedAt ?? current.createdAt)) {
+      ballsByOwner.set(ball.ownerId, ball);
+    }
+  }
+  return [...ballsByOwner.values()]
+    .sort((a, b) => Date.parse(a.deployedAt ?? a.createdAt) - Date.parse(b.deployedAt ?? b.createdAt))
+    .slice(0, 8);
 }
 
 function ensureActivePlatformEvent(state: PlatformState, now: Date): PlatformEventState {

@@ -73,10 +73,13 @@ Original prompt: 你参考 agent 坦克大战再设计一下，不要英文，�
 - 已在平台快照新增 `agentContract`，前端“复制给 Agent”页面显示交互契约，复制包也包含四类入口、允许/禁止字段、校验规则和账本记录。
 - 已在 `AGENT_GUIDE.md` 和 `design-spec.md` 顶部补充当前轻量落地说明，避免旧的 agent_key/策略代码发布设想与现有实现混淆。
 - 已通过 `npm run typecheck` 和 `npm run build`；已用项目本地 Playwright + 系统 Chrome 检查桌面与手机“复制给 Agent”页面，交互契约可见且无横向溢出。技能自带脚本仍因从技能目录解析不到项目内 Playwright 包而无法运行。
+- 已沉淀 2026-06-18 关于 Agent 间支付、Agent 可参与网站、球球大作战创业化方向的完整讨论到 `AGENT_RULESPACE_PRODUCT_SPEC.md`：明确“规则可读、状态可查、动作可提交、结果可记账、预算可限制”的 Agent 规则层，并说明它和当前异步策略托管实现、未来支付接入、真实商业场景迁移之间的关系。
+- 已修复赛事池补齐逻辑：用户点击参加赛事时会按真实用户每人选 1 个最新部署球球加入赛事池；Worker 开局前如果发现当前赛事池不足，也会从真实用户已部署球球里自动补齐，避免“平台用户够了但赛事池只有 1 人”导致赛事停住。
 
 ## 待办
 
 - 公开大规模使用前建议给智能体上传端口加密钥/签名和 IP/用户级限流。
+- 后续产品文案和赛后报告可以吸收 `AGENT_RULESPACE_PRODUCT_SPEC.md` 的表达：用户不是手动玩球，而是训练一个能进入规则场、在预算内行动、可复盘的球球 Agent。
 - 后续如果要做更强的 Agent 专用入口，可新增 `/api/agent/rules`、`/api/agent/state`、`/api/agent/action`、`/api/agent/log` 四个别名接口；当前先复用现有 API，避免重复系统。
 - 24 小时赛事 Worker 需要部署到 Render/Railway/Fly/VPS 等常驻进程环境；Vercel 继续负责网页和 API，不承担 24 小时常驻比赛进程。
 - 若未来希望“玩家淘汰后立刻结束”，需要改模拟器结束条件；当前胜负是按局时结算排名。
