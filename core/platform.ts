@@ -470,6 +470,9 @@ export function runNextPlatformEventRoundInState(
     event.status = "finished";
     return null;
   }
+  const lastRunMs = event.lastRunAt ? Date.parse(event.lastRunAt) : 0;
+  if (lastRunMs && now.getTime() - lastRunMs < EVENT_MATCH_DURATION_SECONDS * 1000) return null;
+
   const participantBallIds = ensureEventParticipantBallIds(state, event);
   const balls = participantBallIds
     .map((ballId) => state.balls.find((ball) => ball.ballId === ballId))

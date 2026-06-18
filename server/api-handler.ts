@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { Replay } from "../core/types.js";
 import {
   currentUserFromCookie,
   logoutSession,
@@ -14,6 +15,7 @@ import {
   runNextPlatformEventRoundInState,
   runPlatformEventInState,
   runStrategyPreviewInState,
+  snapshotFromPlatformState,
   updateBallAppearanceInState,
   type AgentProfile,
   type BallAppearance,
@@ -81,7 +83,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (req.method === "GET" && route === "/platform") {
-      sendJson(res, 200, await readPlatformSnapshotFromStore());
+      let replayToSave: Replay | undefined;
+      const snapshot = await mutatePlatformState((state) => {
+        const result = runNextPlatformEventRoundInState(state, new Date());
+        if (result) {
+          replayToSave = result.replay;
+          return result.snapshot;
+        }
+        return snapshotFromPlatformState(state);
+      });
+      if (replayToSave) await savePlatformReplayToStore(replayToSave);
+      sendJson(res, 200, snapshot);
       return;
     }
 
