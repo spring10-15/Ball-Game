@@ -33,5 +33,11 @@
     "api/**/*.ts": {
       "maxDuration": 10
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/event-round",
+      "schedule": "* * * * *"
+    }
+  ]
 }
