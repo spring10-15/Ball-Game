@@ -21,6 +21,7 @@ import {
   AgentEntry,
   BurstView,
   DEFAULT_CONFIG,
+  DecisionTrace,
   EnemyView,
   Event,
   FoodView,
@@ -203,6 +204,7 @@ export function runMatch(options: RunOptions): Replay {
   // ---------- 事件流 ----------
   const events: Event[] = [];
   const frames: ReplayFrame[] = [];
+  const latestDecisions = new Map<string, DecisionTrace>();
 
   // ---------- 复活/初始 spawn ----------
   const findSpawnPoint = (time: number): Pos => {
@@ -274,7 +276,7 @@ export function runMatch(options: RunOptions): Replay {
 
     // 2. 决策（每 N tick 一次）
     if (tick % decisionEveryNTick === 0) {
-      runDecisions(agents, balls, bursts, foods, cfg, time, tick, events);
+      runDecisions(agents, balls, bursts, foods, cfg, time, tick, events, latestDecisions);
     }
 
     // 3. 物理推进
@@ -316,7 +318,7 @@ export function runMatch(options: RunOptions): Replay {
 
     // 9. 录帧（10Hz 录一次，省空间）
     if (tick % decisionEveryNTick === 0) {
-      frames.push(snapshot(tick, time, balls, foods, bursts));
+      frames.push(snapshot(tick, time, balls, foods, bursts, latestDecisions));
     }
 
     // 10. 胜负检查
@@ -414,6 +416,7 @@ function runDecisions(
   time: number,
   tick: number,
   events: Event[],
+  latestDecisions: Map<string, DecisionTrace>,
 ) {
   for (const state of agents.values()) {
     const ball = state.ballId ? balls.get(state.ballId) : undefined;
@@ -449,8 +452,108 @@ function runDecisions(
       action = { type: "idle" };
     }
 
+    latestDecisions.set(state.agentId, explainDecision(state.agentId, action, meView, worldView));
     applyAction(action, ball, state, bursts, cfg, time, tick, events);
   }
+}
+
+function explainDecision(agentId: string, action: Action, me: SelfView, world: WorldView): DecisionTrace {
+  const threat = nearestVisibleThreat(me, world);
+  const prey = nearestVisiblePrey(me, world);
+  const food = bestVisibleFood(me, world);
+  const threatDistance = threat ? dist(me.position, threat.position) : Infinity;
+  const risk: DecisionTrace["risk"] = threatDistance < Math.max(me.radius * 3.5, 120)
+    ? "危险"
+    : threatDistance < Math.max(me.radius * 6, 220)
+      ? "注意"
+      : "安全";
+
+  if (action.type === "burst") {
+    const directionTarget = {
+      x: me.position.x + action.direction.dx * 240,
+      y: me.position.y + action.direction.dy * 240,
+    };
+    const movingTowardThreat = threat ? dist(directionTarget, threat.position) < threatDistance : false;
+    const movingTowardPrey = prey ? dist(directionTarget, prey.position) < dist(me.position, prey.position) : false;
+    return {
+      agentId,
+      action: "burst",
+      focus: movingTowardPrey ? "追击窗口" : movingTowardThreat ? "危险脱离" : "速度窗口",
+      risk,
+      reason: movingTowardPrey
+        ? "发现可吞噬目标进入冲刺距离，使用短冲抢先贴近。"
+        : movingTowardThreat
+          ? "附近大球压迫距离过近，使用短冲拉开安全半径。"
+          : "当前质量和冷却允许冲刺，用速度换位置优势。",
+      target: directionTarget,
+    };
+  }
+
+  if (action.type === "move") {
+    const target = action.target;
+    const targetMovesAwayFromThreat = threat ? dist(target, threat.position) > threatDistance : false;
+    const targetNearFood = food ? dist(target, food.position) < Math.max(90, me.radius * 3) : false;
+    const targetNearPrey = prey ? dist(target, prey.position) < Math.max(120, me.radius * 4) : false;
+    const center = { x: world.mapBounds.w / 2, y: world.mapBounds.h / 2 };
+    const targetNearCenter = dist(target, center) < world.viewRadius * 0.45;
+
+    if (risk !== "安全" && targetMovesAwayFromThreat) {
+      return {
+        agentId,
+        action: "move",
+        focus: "远离大球",
+        risk,
+        reason: "检测到更大球接近，移动目标能扩大与威胁的距离。",
+        target,
+      };
+    }
+    if (targetNearPrey) {
+      return {
+        agentId,
+        action: "move",
+        focus: "追击小球",
+        risk,
+        reason: "视野内存在质量明显更低的目标，尝试压近吞噬距离。",
+        target,
+      };
+    }
+    if (targetNearFood) {
+      return {
+        agentId,
+        action: "move",
+        focus: "收集营养",
+        risk,
+        reason: "当前安全窗口可用，优先靠近视野内收益更高的营养块。",
+        target,
+      };
+    }
+    if (targetNearCenter) {
+      return {
+        agentId,
+        action: "move",
+        focus: "中心控场",
+        risk,
+        reason: "附近没有立即威胁，向资源更密集的中心区域靠拢。",
+        target,
+      };
+    }
+    return {
+      agentId,
+      action: "move",
+      focus: risk === "安全" ? "位置调整" : "安全转移",
+      risk,
+      reason: risk === "安全" ? "按当前托管策略调整站位，寻找下一段收益路线。" : "保留距离，避免被更大球夹住。",
+      target,
+    };
+  }
+
+  return {
+    agentId,
+    action: "idle",
+    focus: "保持惯性",
+    risk,
+    reason: "当前没有更优目标或策略返回空动作，沿用上一移动目标。",
+  };
 }
 
 function buildSelfView(ball: Ball, state: AgentState, cfg: MatchConfig, time: number): SelfView {
@@ -840,7 +943,9 @@ function snapshot(
   balls: Map<string, Ball>,
   foods: Map<string, Food>,
   bursts: Burst[],
+  latestDecisions: Map<string, DecisionTrace>,
 ): ReplayFrame {
+  const liveAgentIds = new Set([...balls.values()].filter((b) => b.alive).map((b) => b.agentId));
   return {
     tick,
     time,
@@ -860,7 +965,29 @@ function snapshot(
       direction: { dx: b.direction.x, dy: b.direction.y },
       ageSeconds: time - b.bornAt,
     })),
+    decisions: [...latestDecisions.values()].filter((decision) => liveAgentIds.has(decision.agentId)),
   };
+}
+
+function nearestVisibleThreat(me: SelfView, world: WorldView): EnemyView | undefined {
+  return world.enemies
+    .filter((enemy) => !enemy.invulnerable && enemy.mass >= me.mass * 1.15)
+    .sort((a, b) => dist(me.position, a.position) - dist(me.position, b.position))[0];
+}
+
+function nearestVisiblePrey(me: SelfView, world: WorldView): EnemyView | undefined {
+  return world.enemies
+    .filter((enemy) => !enemy.invulnerable && enemy.mass <= me.mass * 0.72)
+    .sort((a, b) => dist(me.position, a.position) - dist(me.position, b.position))[0];
+}
+
+function bestVisibleFood(me: SelfView, world: WorldView): FoodView | undefined {
+  return world.foods
+    .map((food) => ({
+      food,
+      score: food.mass * 10 - dist(me.position, food.position) * 0.045,
+    }))
+    .sort((a, b) => b.score - a.score)[0]?.food;
 }
 
 function computeResults(

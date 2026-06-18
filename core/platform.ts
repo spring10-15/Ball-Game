@@ -92,6 +92,30 @@ export interface PlatformBall {
   deployedAt?: string;
 }
 
+export interface StrategyModel {
+  profile: AgentProfile;
+  profileLabel: string;
+  skillMode: BallSkillMode;
+  skillName: string;
+  executableModel: string;
+  priorities: string[];
+  triggers: string[];
+  boundaries: string[];
+}
+
+export interface PlatformAgentContract {
+  mode: string;
+  ruleEndpoint: string;
+  stateEndpoint: string;
+  actionEndpoint: string;
+  logEndpoint: string;
+  actionType: string;
+  allowedInputs: string[];
+  deniedInputs: string[];
+  validationRules: string[];
+  ledgerRecords: string[];
+}
+
 export interface PlatformBattleResult {
   ballId: string;
   agentId: string;
@@ -174,6 +198,7 @@ export interface PlatformSnapshot {
     agentProfileLabel: string;
     skillLabel: string;
     skillDescription: string;
+    strategyModel: StrategyModel;
   }>;
   matches: PlatformMatchRecord[];
   editRecords: BallEditRecord[];
@@ -199,6 +224,7 @@ export interface PlatformSnapshot {
     userCanEdit: string[];
     agentOnly: string[];
   };
+  agentContract: PlatformAgentContract;
   autoMatch: {
     minPlayers: number;
     cooldownSeconds: number;
@@ -266,6 +292,29 @@ export interface AgentTuneInput {
   skillRule?: string;
   editRule?: string;
   actor?: string;
+}
+
+export interface StrategyPreview {
+  ballId: string;
+  ballName: string;
+  strategyModel: StrategyModel;
+  replay: Replay;
+  summary: {
+    durationSeconds: number;
+    rank: number;
+    foodPickedMass: number;
+    finalMass: number;
+    kills: number;
+    dangerSeconds: number;
+    burstsTotal: number;
+    decisionErrors: number;
+    firstDecisions: Array<{
+      time: number;
+      focus: string;
+      risk: string;
+      reason: string;
+    }>;
+  };
 }
 
 const profileLabels: Record<AgentProfile, string> = {
@@ -596,6 +645,53 @@ export function agentTuneBallInState(state: PlatformState, input: AgentTuneInput
   return snapshotFromPlatformState(state);
 }
 
+export function runStrategyPreviewInState(state: PlatformState, ballId: string): StrategyPreview {
+  const ball = mustFindBall(state, ballId);
+  const agentId = agentIdForBall(ball.ballId);
+  const replay = runMatch({
+    matchId: `preview_${ball.ballId}_${Date.now().toString(36)}`,
+    config: {
+      seed: Math.floor(Date.now() % 100000),
+      durationSeconds: 10,
+    },
+    agents: [
+      agentEntryForBall(ball),
+      { agentId: "preview_conservative", name: "稳健陪练", strategy: conservative },
+      { agentId: "preview_greedy", name: "进攻陪练", strategy: greedy },
+    ],
+  });
+  const result = replay.results.find((item) => item.agentId === agentId) ?? replay.results[0];
+  const firstDecisions = replay.frames
+    .flatMap((frame) => (frame.decisions ?? [])
+      .filter((decision) => decision.agentId === agentId)
+      .map((decision) => ({
+        time: round(frame.time),
+        focus: decision.focus,
+        risk: decision.risk,
+        reason: decision.reason,
+      })))
+    .filter((decision, index, all) => index === 0 || all[index - 1].focus !== decision.focus || all[index - 1].risk !== decision.risk)
+    .slice(0, 8);
+
+  return {
+    ballId: ball.ballId,
+    ballName: ball.name,
+    strategyModel: strategyModelForBall(ball),
+    replay,
+    summary: {
+      durationSeconds: replay.config.durationSeconds,
+      rank: result.rank,
+      foodPickedMass: round(result.metrics.foodPickedMass),
+      finalMass: round(result.metrics.finalMass),
+      kills: result.metrics.kills,
+      dangerSeconds: round(result.metrics.dangerSeconds),
+      burstsTotal: result.metrics.burstsTotal,
+      decisionErrors: result.metrics.decisionErrors,
+      firstDecisions,
+    },
+  };
+}
+
 export function runPlatformBattleInState(
   state: PlatformState,
   input: RunPlatformBattleInput,
@@ -664,6 +760,7 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
       agentProfileLabel: profileLabels[ball.agentProfile],
       skillLabel: ball.skillName || skillLabels[ball.skill ?? "none"],
       skillDescription: ball.skillRule || skillDescriptions[ball.skill ?? "none"],
+      strategyModel: strategyModelForBall(ball),
     })),
     matches: state.matches,
     editRecords: state.editRecords,
@@ -680,6 +777,24 @@ function snapshotFromState(state: PlatformState): PlatformSnapshot {
     agentRules: {
       userCanEdit: ["出场名", "主色", "描边", "花纹"],
       agentOnly: ["移动方向", "策略档位", "专属技能", "触发条件", "风险阈值", "地图偏好", "追击/撤退优先级"],
+    },
+    agentContract: {
+      mode: "异步策略托管：Agent 不看屏幕、不点按钮、不实时提交鼠标动作；Agent 读取规则和战绩后提交本球策略更新，网站在模拟器里裁判执行。",
+      ruleEndpoint: "GET /api/platform",
+      stateEndpoint: "GET /api/platform",
+      actionEndpoint: "POST /api/agent/ball-edit-upload",
+      logEndpoint: "GET /api/platform + GET /api/platform/replays/{matchId}",
+      actionType: "strategy_update",
+      allowedInputs: ["ballId", "editRule", "profile", "skill", "skillRule"],
+      deniedInputs: ["全局物理参数", "质量收益", "吞噬判定", "复活规则", "无敌帧", "冷却时间", "其他球球状态", "人类账号资料"],
+      validationRules: [
+        "actor 必须等于 agent",
+        "ballId 必须存在",
+        "profile 只能是 balanced、conservative、greedy",
+        "skill 和 skillRule 会被归类到安全行为模型",
+        "越界字段不会获得全局裁判权限",
+      ],
+      ledgerRecords: ["内部版本号", "编辑人类型", "编辑规则原文", "托管档位变化", "编辑时间", "比赛记录", "回放决策轨迹"],
     },
     autoMatch: {
       minPlayers: AUTO_MATCH_MIN_PLAYERS,
@@ -1272,6 +1387,72 @@ function strategyForBall(ball: PlatformBall): StrategyFn {
   if (skill === "center") return withCenterSkill(base);
   if (skill === "shadow") return withShadowSkill(base);
   return base;
+}
+
+function strategyModelForBall(ball: PlatformBall): StrategyModel {
+  const skill = ball.skill ?? "none";
+  return {
+    profile: ball.agentProfile,
+    profileLabel: profileLabels[ball.agentProfile],
+    skillMode: skill,
+    skillName: ball.skillName || skillLabels[skill],
+    executableModel: executableModelLabel(skill),
+    priorities: strategyPriorities(ball.agentProfile, skill),
+    triggers: strategyTriggers(skill),
+    boundaries: [
+      "只改变本球移动、追击、撤退和冲刺决策",
+      "不修改质量收益、吞噬判定、复活、无敌和冷却",
+      "不能直接修改其他球球状态",
+    ],
+  };
+}
+
+function executableModelLabel(skill: BallSkillMode): string {
+  const labels: Record<BallSkillMode, string> = {
+    none: "基础托管模型",
+    forage: "觅食优先模型",
+    evade: "提前避险模型",
+    dash: "谨慎短冲模型",
+    hunt: "猎手追击模型",
+    edge: "贴边求生模型",
+    center: "中心控场模型",
+    shadow: "影子绕行模型",
+  };
+  return labels[skill];
+}
+
+function strategyPriorities(profile: AgentProfile, skill: BallSkillMode): string[] {
+  const profilePriorities: Record<AgentProfile, string[]> = {
+    balanced: ["安全距离", "稳定吃豆", "机会追击"],
+    conservative: ["避开大球", "保留复活", "低风险发育"],
+    greedy: ["追击小球", "抢高价值食物", "扩大质量优势"],
+  };
+  const skillPriority: Record<BallSkillMode, string> = {
+    none: "按托管档位行动",
+    forage: "优先选择中大型营养块",
+    evade: "威胁接近时提前撤退",
+    dash: "只在明确窗口短冲",
+    hunt: "发现弱小目标时主动压近",
+    edge: "低质量或被压迫时贴边转移",
+    center: "安全时争夺中心资源区",
+    shadow: "围绕大球安全半径外侧游走",
+  };
+  return unique([...profilePriorities[profile], skillPriority[skill]]);
+}
+
+function strategyTriggers(skill: BallSkillMode): string[] {
+  const common = ["每 0.1 秒根据视野重新决策", "发现更大球进入危险半径时提高风险等级"];
+  const skillTriggers: Record<BallSkillMode, string[]> = {
+    none: ["使用托管档位默认触发条件"],
+    forage: ["安全窗口内发现中大型营养块"],
+    evade: ["更大球靠近到预警半径"],
+    dash: ["冲刺冷却就绪且质量足够"],
+    hunt: ["视野内出现明显更小且非无敌球"],
+    edge: ["低质量、低复活或被大球压迫"],
+    center: ["中心附近出现较高资源密度且无近身威胁"],
+    shadow: ["附近存在大球锚点且仍有安全半径"],
+  };
+  return [...common, ...skillTriggers[skill]];
 }
 
 function withForageSkill(base: StrategyFn): StrategyFn {

@@ -45,12 +45,37 @@ export interface PlatformBall {
   skillRule: string;
   skillLabel: string;
   skillDescription: string;
+  strategyModel: StrategyModel;
   internalRevision: number;
   status: BallStatus;
   createdAt: string;
   updatedAt: string;
   deployedAt?: string;
   record: BallRecord;
+}
+
+export interface StrategyModel {
+  profile: AgentProfile;
+  profileLabel: string;
+  skillMode: BallSkillMode;
+  skillName: string;
+  executableModel: string;
+  priorities: string[];
+  triggers: string[];
+  boundaries: string[];
+}
+
+export interface PlatformAgentContract {
+  mode: string;
+  ruleEndpoint: string;
+  stateEndpoint: string;
+  actionEndpoint: string;
+  logEndpoint: string;
+  actionType: string;
+  allowedInputs: string[];
+  deniedInputs: string[];
+  validationRules: string[];
+  ledgerRecords: string[];
 }
 
 export interface PlatformBattleResult {
@@ -130,6 +155,7 @@ export interface PlatformSnapshot {
     userCanEdit: string[];
     agentOnly: string[];
   };
+  agentContract: PlatformAgentContract;
   autoMatch: {
     minPlayers: number;
     cooldownSeconds: number;
@@ -166,6 +192,29 @@ export interface PlatformRunResponse {
   replay?: Replay;
   match?: PlatformMatchRecord;
   event?: PlatformSnapshot["event"];
+}
+
+export interface StrategyPreview {
+  ballId: string;
+  ballName: string;
+  strategyModel: StrategyModel;
+  replay: Replay;
+  summary: {
+    durationSeconds: number;
+    rank: number;
+    foodPickedMass: number;
+    finalMass: number;
+    kills: number;
+    dangerSeconds: number;
+    burstsTotal: number;
+    decisionErrors: number;
+    firstDecisions: Array<{
+      time: number;
+      focus: string;
+      risk: string;
+      reason: string;
+    }>;
+  };
 }
 
 export interface AuthUser {
@@ -241,6 +290,13 @@ export async function joinPlatformEvent(): Promise<PlatformRunResponse> {
 
 export async function loadPlatformReplay(matchId: string): Promise<Replay> {
   return requestJson<Replay>(`/api/platform/replays/${encodeURIComponent(matchId)}`);
+}
+
+export async function previewPlatformBallStrategy(ballId: string): Promise<StrategyPreview> {
+  return requestJson<StrategyPreview>("/api/platform/balls/strategy-preview", {
+    method: "POST",
+    body: JSON.stringify({ ballId }),
+  });
 }
 
 export async function uploadAgentBallEdit(input: {

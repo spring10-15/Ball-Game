@@ -13,6 +13,7 @@ import {
   createUserBallInState,
   runNextPlatformEventRoundInState,
   runPlatformEventInState,
+  runStrategyPreviewInState,
   updateBallAppearanceInState,
   type AgentProfile,
   type BallAppearance,
@@ -195,6 +196,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         });
       });
       sendJson(res, 200, snapshot);
+      return;
+    }
+
+    if (req.method === "POST" && route === "/platform/balls/strategy-preview") {
+      const user = await requireAuth(req);
+      const body = await readJsonBody(req);
+      const ballId = requiredString(body.ballId, "ballId");
+      const state = await readPlatformStateFromStore();
+      const ball = state.balls.find((item) => item.ballId === ballId);
+      if (!ball) throw new RequestError("没有找到这个球球", 404);
+      if (ball.ownerId !== user.userId) throw new RequestError("只能预览自己的球球", 403);
+      sendJson(res, 200, runStrategyPreviewInState(state, ballId));
       return;
     }
 

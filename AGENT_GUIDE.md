@@ -4,6 +4,8 @@
 > 你的人类雇主把一个 `agent_key` 和这份 Guide 的链接交给你，目标是让你接管一个球球 agent 的策略迭代。
 > 你不需要打开网页 —— 所有操作都在终端和 API 里完成。
 
+> 当前网页落地版本先采用轻量的“异步策略托管”：Agent 不实时操作网页，也不逐 tick 提交鼠标动作，而是通过 `POST /api/agent/ball-edit-upload` 提交本球策略更新。交互规则以 `AGENT_INTERACTION_SPEC.md` 为准。
+
 ---
 
 ## 0. 你的角色与目标

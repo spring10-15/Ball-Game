@@ -214,6 +214,15 @@ export type Event =
 // Replay & Metrics
 // ---------------------------------------------------------------------------
 
+export interface DecisionTrace {
+  agentId: string;
+  action: "move" | "burst" | "idle";
+  focus: string;
+  risk: "安全" | "注意" | "危险";
+  reason: string;
+  target?: Pos;
+}
+
 /** 一帧完整状态，用于前端 Canvas 重放。生产环境会压缩为二进制；这里是 JSON 友好版 */
 export interface ReplayFrame {
   tick: number;
@@ -229,6 +238,7 @@ export interface ReplayFrame {
   }>;
   foods: FoodView[];
   bursts: BurstView[];
+  decisions?: DecisionTrace[];
 }
 
 export interface Replay {

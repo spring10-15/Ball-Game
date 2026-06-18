@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { Event, MatchResult, Replay } from "../core/types";
+import type { DecisionTrace, Event, MatchResult, Replay } from "../core/types";
 import privacyComicUrl from "./assets/privacy-comic-v1.png";
 import privacyPolicySource from "./assets/privacy-policy.md?raw";
 import { ReplayCanvas } from "./ReplayCanvas";
@@ -33,13 +33,17 @@ import {
   logoutCurrentUser,
   ownedBallCount,
   patternLabel,
+  previewPlatformBallStrategy,
   requestLoginCode,
   type BallAppearance,
   type BallPattern,
   type AuthUser,
   type PlatformBall,
+  type PlatformAgentContract,
   type PlatformMatchRecord,
   type PlatformSnapshot,
+  type StrategyModel,
+  type StrategyPreview,
   savePlatformAppearance,
   verifyLoginCode,
 } from "./platform";
@@ -355,6 +359,25 @@ export function App() {
     }
   }
 
+  async function previewStrategyFromUi(ballId: string): Promise<StrategyPreview | null> {
+    setOperation("strategy-preview");
+    try {
+      const preview = await previewPlatformBallStrategy(ballId);
+      setReplay(preview.replay);
+      setFrameIndex(0);
+      setSelectedAgentId(agentIdForBall(ballId));
+      setIsPlaying(true);
+      setArenaEntryTab("replay");
+      setView("arena");
+      return preview;
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setOperation(null);
+    }
+  }
+
   async function loadLatestPlatformReplay(nextPlatform: PlatformSnapshot) {
     for (const match of nextPlatform.matches) {
       if (!canOpenMatchReplay(match)) continue;
@@ -469,6 +492,7 @@ export function App() {
           platform={platform}
           selectedBall={selectedPlatformBall}
           onCreateBall={createBallFromUi}
+          onPreviewStrategy={previewStrategyFromUi}
           onSaveAppearance={saveAppearanceFromUi}
           onSelectBall={setSelectedPlatformBallId}
         />
@@ -661,6 +685,7 @@ function ProfileView({
   platform,
   selectedBall,
   onCreateBall,
+  onPreviewStrategy,
   onSaveAppearance,
   onSelectBall,
 }: {
@@ -675,6 +700,7 @@ function ProfileView({
     motto?: string;
     appearance?: Partial<BallAppearance>;
   }) => Promise<PlatformBall | null>;
+  onPreviewStrategy: (ballId: string) => Promise<StrategyPreview | null>;
   onSaveAppearance: (input: {
     ballId: string;
     name?: string;
@@ -730,6 +756,7 @@ function ProfileView({
           selectedBall={selectedBall}
           onCreateBall={onCreateBall}
           onPanelChange={(panel) => setTab(panel)}
+          onPreviewStrategy={onPreviewStrategy}
           onSaveAppearance={onSaveAppearance}
           onSelectBall={openBallSettings}
         />
@@ -756,6 +783,7 @@ function ReplayView({
   onSpeedChange,
 }: ReplayViewProps) {
   const frame = frameAt(replay, frameIndex);
+  const currentDecision = frame.decisions?.find((decision) => decision.agentId === selectedResult.agentId);
   return (
     <>
       <section className="workspace">
@@ -790,6 +818,7 @@ function ReplayView({
             </div>
             <MetricGrid result={selectedResult} />
           </section>
+          <DecisionPanel decision={currentDecision} />
         </aside>
       </section>
 
@@ -805,6 +834,7 @@ function PlatformView({
   panel,
   onCreateBall,
   onPanelChange,
+  onPreviewStrategy,
   onSaveAppearance,
   onSelectBall,
 }: {
@@ -820,6 +850,7 @@ function PlatformView({
     appearance?: Partial<BallAppearance>;
   }) => Promise<PlatformBall | null>;
   onPanelChange: (panel: PlatformTabKey) => void;
+  onPreviewStrategy: (ballId: string) => Promise<StrategyPreview | null>;
   onSaveAppearance: (input: {
     ballId: string;
     name?: string;
@@ -838,6 +869,7 @@ function PlatformView({
   const [copied, setCopied] = useState(false);
   const [createMessage, setCreateMessage] = useState<string | null>(null);
   const [activeBallId, setActiveBallId] = useState(selectedBall?.ballId ?? null);
+  const [strategyPreview, setStrategyPreview] = useState<StrategyPreview | null>(null);
 
   const busy = operation === "platform" || operation === "platform-match";
   const myBalls = platform.balls.filter((ball) => ball.ownerId === ownerId);
@@ -846,6 +878,7 @@ function PlatformView({
   const createLimitReached = ownerBallCount >= platform.userLimits.maxBallsPerUser;
   const agentEditRule = "由 Agent 根据最近对战记录自主定义球球的行为、技能、战略和移动方向；人类只负责外观。";
   const agentUploadUrl = `${window.location.origin}/api/agent/ball-edit-upload`;
+  const agentContract = platform.agentContract;
 
   useEffect(() => {
     if (selectedBall?.ownerId === ownerId) setActiveBallId(selectedBall.ballId);
@@ -862,6 +895,8 @@ function PlatformView({
   const aiPacket = editableBall
     ? [
         "你是这个球球的策略调整智能体。请根据下面的信息调整球球内部策略，并把调整结果上传到指定端口。",
+        "交互模式：你不需要打开网页、看屏幕、移动鼠标或点击按钮；网站通过规则、状态、动作、账本四类接口与你交互。",
+        `当前模式：${agentContract.mode}`,
         "",
         `球球专属编号：${editableBall.ballId}`,
         `球球名称：${editableBall.name}`,
@@ -871,10 +906,21 @@ function PlatformView({
         `技能说明：${editableBall.skillDescription}`,
         `权限边界：${agentEditRule}`,
         "",
+        "四类入口：",
+        `规则：${agentContract.ruleEndpoint}`,
+        `状态：${agentContract.stateEndpoint}`,
+        `动作：${agentContract.actionEndpoint}`,
+        `账本：${agentContract.logEndpoint}`,
+        "",
         `上传端口：POST ${agentUploadUrl}`,
+        `动作类型：${agentContract.actionType}`,
         "请求格式：JSON",
         "必须字段：actor、ballId、editRule",
         "可选字段：profile、skill、skillRule",
+        `允许输入：${agentContract.allowedInputs.join("、")}`,
+        `禁止输入：${agentContract.deniedInputs.join("、")}`,
+        `网站校验：${agentContract.validationRules.join("；")}`,
+        `账本记录：${agentContract.ledgerRecords.join("、")}`,
         "profile 可选值：balanced（均衡）、conservative（稳健）、greedy（进攻）",
         "skill 可以写自定义技能名称或一句技能设定，例如：猎手机会、中心控场、影子绕行、抢豆雷达、贴边求生。",
         "skillRule 可以写更完整的触发条件、风险阈值、地图偏好、追击/撤退优先级；系统会自动归类到可执行的行为模型。",
@@ -925,6 +971,12 @@ function PlatformView({
     window.setTimeout(() => setCopied(false), 1200);
   }
 
+  async function previewStrategy() {
+    if (!editableBall) return;
+    const preview = await onPreviewStrategy(editableBall.ballId);
+    if (preview) setStrategyPreview(preview);
+  }
+
   async function createBall() {
     const created = await onCreateBall({
       ownerName: currentUser.displayName,
@@ -947,6 +999,7 @@ function PlatformView({
   function chooseEditableBall(ballId: string) {
     setActiveBallId(ballId);
     onSelectBall(ballId);
+    setStrategyPreview(null);
   }
 
   function BallSelector() {
@@ -1101,16 +1154,50 @@ function PlatformView({
           {editableBall ? (
             <div className="rule-copy-layout">
               <BallSelector />
-              <div className="agent-copy-card">
-                <span className="ball-avatar" style={{ background: editableBall.appearance.color, borderColor: editableBall.appearance.accentColor }} />
-                <div>
-                  <h3>{editableBall.name}</h3>
-                  <p>当前技能：{editableBall.skillLabel}。复制后交给 Agent，由 Agent 决定行为、技能、战略和移动方向。</p>
+              <div className="agent-workbench">
+                <div className="agent-copy-card">
+                  <span className="ball-avatar" style={{ background: editableBall.appearance.color, borderColor: editableBall.appearance.accentColor }} />
+                  <div>
+                    <h3>{editableBall.name}</h3>
+                    <p>当前技能：{editableBall.skillLabel}。复制后交给 Agent，由 Agent 决定行为、技能、战略和移动方向。</p>
+                  </div>
+                  <button className="copy-action" onClick={copyAiPacket} type="button">
+                    {copied ? <Check size={15} /> : <Copy size={15} />}
+                    {copied ? "已复制" : "复制给 Agent"}
+                  </button>
                 </div>
-                <button className="copy-action" onClick={copyAiPacket} type="button">
-                  {copied ? <Check size={15} /> : <Copy size={15} />}
-                  {copied ? "已复制" : "复制给 Agent"}
-                </button>
+                <AgentContractCard contract={agentContract} />
+                <StrategyModelCard model={editableBall.strategyModel} />
+                <div className="strategy-preview-card">
+                  <div className="section-heading compact">
+                    <h3>策略预览</h3>
+                    <span>10 秒沙盘</span>
+                  </div>
+                  <button disabled={operation === "strategy-preview"} onClick={previewStrategy} type="button">
+                    <Eye size={16} />
+                    {operation === "strategy-preview" ? "预览中" : "跑一次预览"}
+                  </button>
+                  {strategyPreview?.ballId === editableBall.ballId && (
+                    <div className="preview-result">
+                      <div className="preview-metrics">
+                        <MetricMini label="名次" value={`第 ${strategyPreview.summary.rank} 名`} />
+                        <MetricMini label="吃豆" value={formatNumber(strategyPreview.summary.foodPickedMass)} />
+                        <MetricMini label="终局质量" value={formatNumber(strategyPreview.summary.finalMass)} />
+                        <MetricMini label="遇险" value={`${formatNumber(strategyPreview.summary.dangerSeconds, 1)} 秒`} />
+                      </div>
+                      <div className="decision-list compact">
+                        {strategyPreview.summary.firstDecisions.map((decision, index) => (
+                          <div className="decision-row" key={`${decision.time}-${decision.focus}-${index}`}>
+                            <b>{formatNumber(decision.time, 1)} 秒</b>
+                            <strong>{decision.focus}</strong>
+                            <span>{decision.risk}</span>
+                            <em>{decision.reason}</em>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (
@@ -1916,6 +2003,93 @@ function MetricGrid({ result }: { result: MatchResult }) {
       ))}
     </div>
   );
+}
+
+function DecisionPanel({ decision }: { decision?: DecisionTrace }) {
+  return (
+    <section className="panel-section decision-panel">
+      <div className="section-heading">
+        <h2>当前决策</h2>
+        <span>{decision ? decision.risk : "暂无"}</span>
+      </div>
+      {decision ? (
+        <div className={`decision-current risk-${decision.risk}`}>
+          <strong>{displayAction(decision.action)} · {decision.focus}</strong>
+          <p>{decision.reason}</p>
+          {decision.target && <em>目标点：{Math.round(decision.target.x)} / {Math.round(decision.target.y)}</em>}
+        </div>
+      ) : (
+        <EmptyPanel text="这一帧没有记录到选中球球的决策。" />
+      )}
+    </section>
+  );
+}
+
+function StrategyModelCard({ model }: { model: StrategyModel }) {
+  return (
+    <div className="strategy-model-card">
+      <div className="section-heading compact">
+        <h3>系统理解</h3>
+        <span>{model.executableModel}</span>
+      </div>
+      <div className="strategy-model-grid">
+        <MetricMini label="托管" value={model.profileLabel} />
+        <MetricMini label="技能" value={model.skillName} />
+      </div>
+      <div className="strategy-lines">
+        <strong>优先级</strong>
+        <span>{model.priorities.join("、")}</span>
+      </div>
+      <div className="strategy-lines">
+        <strong>触发</strong>
+        <span>{model.triggers.join("、")}</span>
+      </div>
+      <div className="strategy-lines">
+        <strong>边界</strong>
+        <span>{model.boundaries.join("、")}</span>
+      </div>
+    </div>
+  );
+}
+
+function AgentContractCard({ contract }: { contract: PlatformAgentContract }) {
+  return (
+    <div className="agent-contract-card">
+      <div className="section-heading compact">
+        <h3>交互契约</h3>
+        <span>{contract.actionType}</span>
+      </div>
+      <p>{contract.mode}</p>
+      <div className="contract-grid">
+        <MetricMini label="规则" value={contract.ruleEndpoint} />
+        <MetricMini label="状态" value={contract.stateEndpoint} />
+        <MetricMini label="动作" value={contract.actionEndpoint} />
+        <MetricMini label="账本" value={contract.logEndpoint} />
+      </div>
+      <div className="strategy-lines">
+        <strong>允许</strong>
+        <span>{contract.allowedInputs.join("、")}</span>
+      </div>
+      <div className="strategy-lines">
+        <strong>禁止</strong>
+        <span>{contract.deniedInputs.join("、")}</span>
+      </div>
+      <div className="strategy-lines">
+        <strong>校验</strong>
+        <span>{contract.validationRules.join("、")}</span>
+      </div>
+      <div className="strategy-lines">
+        <strong>账本</strong>
+        <span>{contract.ledgerRecords.join("、")}</span>
+      </div>
+    </div>
+  );
+}
+
+function displayAction(action: DecisionTrace["action"]): string {
+  if (action === "burst") return "冲刺";
+  if (action === "move") return "移动";
+  return "等待";
 }
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
